@@ -24,7 +24,7 @@ export const siteConfig = {
     },
     {
       title: "Recursos",
-      links: ["Blog", "Teste de Nível", "Materiais Gratuitos", "Webinars"],
+      links: ["Blog", "Teste de Nível", ],
     },
     {
       title: "Suporte",

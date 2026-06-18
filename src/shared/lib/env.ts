@@ -1,6 +1,6 @@
 const fallbackAppUrl = "http://localhost:3000";
 const fallbackApiUrl = "http://localhost:8000";
-const fallbackHotsiteLoginPath = "/hotsite/auth/login/";
+const fallbackHotsiteLoginPath = "/student-portal/auth/login/";
 
 export const publicEnv = {
   appUrl: process.env.NEXT_PUBLIC_APP_URL || fallbackAppUrl,

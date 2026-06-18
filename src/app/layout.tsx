@@ -28,7 +28,10 @@ export default function RootLayout({
       lang="pt-BR"
       className={`${fraunces.variable} ${manrope.variable} h-full scroll-smooth antialiased`}
     >
-      <body className="min-h-full bg-background text-foreground">
+      <body
+        suppressHydrationWarning
+        className="min-h-full bg-background text-foreground"
+      >
         {children}
       </body>
     </html>
