@@ -10,6 +10,8 @@ import {
   Clock3,
   Copy,
   CreditCard,
+  Eye,
+  EyeOff,
   ExternalLink,
   Loader2,
   Moon,
@@ -31,6 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CreditCardPaymentForm } from "@/features/checkout/credit-card-payment-form";
 import { checkoutService } from "@/features/checkout/services/checkout-service";
 import type {
   ApiError,
@@ -42,6 +45,7 @@ import type {
   HotsiteOrderPayload,
   HotsiteOrderResponse,
   HotsitePaymentStatusResponse,
+  HotsiteStartCardPaymentPayload,
 } from "@/shared/types";
 
 type CheckoutStep = "language" | "offer" | "selection" | "account" | "payment";
@@ -68,6 +72,7 @@ type RegisterForm = {
   phone: string;
   email: string;
   password: string;
+  confirmPassword: string;
   zipCode: string;
   address: string;
   addressNumber: string;
@@ -78,6 +83,7 @@ type RegisterForm = {
 };
 
 const checkoutSessionKey = "veli.checkout.selection";
+const emailDomains = ["gmail.com", "outlook.com", "hotmail.com", "icloud.com"];
 
 const dayLabels: Record<string, string> = {
   Mon: "Seg",
@@ -150,8 +156,53 @@ const checkoutSteps: Array<{ value: CheckoutStep; label: string }> = [
   { value: "offer", label: "Oferta" },
   { value: "selection", label: "Turma" },
   { value: "account", label: "Conta" },
-  { value: "payment", label: "PIX" },
+  { value: "payment", label: "Pagamento" },
 ];
+
+function formatCpf(value: string) {
+  return value
+    .replace(/\D/g, "")
+    .slice(0, 11)
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d)/, "$1.$2")
+    .replace(/(\d{3})(\d{1,2})$/, "$1-$2");
+}
+
+function formatPhone(value: string) {
+  return value
+    .replace(/\D/g, "")
+    .slice(0, 11)
+    .replace(/^(\d{2})(\d)/, "($1) $2")
+    .replace(/(\d)(\d{4})$/, "$1-$2");
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/.test(value.trim());
+}
+
+function getPasswordStrength(value: string) {
+  const score = [
+    value.length >= 8,
+    /[a-z]/.test(value),
+    /[A-Z]/.test(value),
+    /\d/.test(value),
+    /[^A-Za-z0-9]/.test(value),
+  ].filter(Boolean).length;
+
+  if (score <= 1) {
+    return { level: 1, label: "Fraca", color: "bg-destructive" };
+  }
+
+  if (score === 2) {
+    return { level: 2, label: "Razoável", color: "bg-orange-500" };
+  }
+
+  if (score === 3) {
+    return { level: 3, label: "Boa", color: "bg-amber-400" };
+  }
+
+  return { level: 4, label: "Forte", color: "bg-emerald-600" };
+}
 
 function getApiErrorMessage(error: unknown) {
   const defaultMessage = "Não foi possível carregar os dados agora.";
@@ -309,14 +360,20 @@ function getBillingLabel(option: HotsiteBillingOption) {
 
 function getBillingDescription(option: HotsiteBillingOption) {
   if (option.billing_method === "credit_card") {
-    return "Em breve";
+    return option.type === "recurring"
+      ? "Cobrança mensal no cartão"
+      : "Pagamento no cartão";
   }
 
   return option.type === "recurring" ? "Cobrança mensal" : "Pagamento único";
 }
 
 function isCreditCardOption(option?: HotsiteBillingOption | null) {
-  return option?.billing_method === "credit_card";
+  return Boolean(
+    option &&
+      (option.billing_method === "credit_card" ||
+        ["MONTHLY_CREDIT_CARD", "UPFRONT_CREDIT_CARD"].includes(option.code))
+  );
 }
 
 function getAuthToken(user: HotsiteAuthenticatedUser) {
@@ -389,6 +446,19 @@ function isPaidStatus(status: HotsitePaymentStatusResponse | null) {
   );
 }
 
+function isFailedStatus(status: HotsitePaymentStatusResponse | null) {
+  if (!status) {
+    return false;
+  }
+
+  return [status.payment_status, status.checkout_status, status.order_status].some(
+    (value) =>
+      ["failed", "rejected", "denied", "cancelled", "canceled"].includes(
+        value?.toLowerCase()
+      )
+  );
+}
+
 function CheckoutLoading() {
   return (
     <div className="flex min-h-48 items-center justify-center rounded-[1.4rem] border border-dashed border-border bg-muted/40">
@@ -457,6 +527,11 @@ export function CheckoutExperience({
   const [paymentBillingType, setPaymentBillingType] =
     useState<PaymentBillingType>("one_time");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [registerEmailTouched, setRegisterEmailTouched] = useState(false);
+  const [confirmPasswordTouched, setConfirmPasswordTouched] = useState(false);
   const [loginForm, setLoginForm] = useState<LoginForm>({
     email: "",
     password: "",
@@ -468,6 +543,7 @@ export function CheckoutExperience({
     phone: "",
     email: "",
     password: "",
+    confirmPassword: "",
     zipCode: "",
     address: "",
     addressNumber: "",
@@ -484,10 +560,12 @@ export function CheckoutExperience({
     useState<HotsiteOrderResponse | null>(null);
   const [paymentStatus, setPaymentStatus] =
     useState<HotsitePaymentStatusResponse | null>(null);
+  const [cardPaymentSubmitted, setCardPaymentSubmitted] = useState(false);
   const [languagesLoading, setLanguagesLoading] = useState(false);
   const [offersLoading, setOffersLoading] = useState(false);
   const [offerDetailLoading, setOfferDetailLoading] = useState(false);
   const [authLoading, setAuthLoading] = useState(false);
+  const [cardPaymentLoading, setCardPaymentLoading] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
   const [languagesError, setLanguagesError] = useState<string | null>(null);
@@ -500,6 +578,31 @@ export function CheckoutExperience({
   const [offerDetailReloadKey, setOfferDetailReloadKey] = useState(0);
 
   const shouldLoadLanguages = mode === "page" || open;
+  const registerEmailInvalid =
+    registerEmailTouched && !isValidEmail(registerForm.email);
+  const passwordStrength = useMemo(
+    () => getPasswordStrength(registerForm.password),
+    [registerForm.password]
+  );
+  const passwordsDoNotMatch =
+    confirmPasswordTouched &&
+    registerForm.password !== registerForm.confirmPassword;
+  const registerEmailSuggestions = useMemo(() => {
+    const email = registerForm.email.trim();
+    const emailParts = email.split("@");
+    const localPart = emailParts[0];
+
+    if (!localPart || emailParts.length > 2) {
+      return [];
+    }
+
+    const domainFragment = emailParts[1]?.toLowerCase() ?? "";
+
+    return emailDomains
+      .filter((domain) => domain.startsWith(domainFragment))
+      .map((domain) => `${localPart}@${domain}`)
+      .filter((suggestion) => suggestion.toLowerCase() !== email.toLowerCase());
+  }, [registerForm.email]);
   const selectedBilling = useMemo(
     () =>
       offerDetail?.billing_options.find(
@@ -507,6 +610,7 @@ export function CheckoutExperience({
       ) ?? null,
     [offerDetail, selectedBillingCode]
   );
+  const isSelectedCreditCard = isCreditCardOption(selectedBilling);
   const activeBillingOptions = useMemo(
     () => offerDetail?.billing_options.filter((option) => option.is_active) ?? [],
     [offerDetail]
@@ -536,7 +640,6 @@ export function CheckoutExperience({
   );
   const canContinueToAccount =
     Boolean(selectedBilling) &&
-    !isCreditCardOption(selectedBilling) &&
     (classChoiceMode === "class" ? Boolean(selectedClassId) : Boolean(selectedPeriod));
   const title = useMemo(() => {
     if (step === "language") {
@@ -555,8 +658,8 @@ export function CheckoutExperience({
       return "Entrar ou criar conta";
     }
 
-    return "Pagamento PIX";
-  }, [step]);
+    return isSelectedCreditCard ? "Pagamento com cartão" : "Pagamento PIX";
+  }, [isSelectedCreditCard, step]);
   const currentStepIndex = checkoutSteps.findIndex(
     (checkoutStep) => checkoutStep.value === step
   );
@@ -690,7 +793,12 @@ export function CheckoutExperience({
   }, [offerDetailReloadKey, selectedOfferSummary, step]);
 
   useEffect(() => {
-    if (step !== "payment" || !orderResponse?.order_id || isPaidStatus(paymentStatus)) {
+    if (
+      step !== "payment" ||
+      !orderResponse?.order_id ||
+      isPaidStatus(paymentStatus) ||
+      (isSelectedCreditCard && !cardPaymentSubmitted)
+    ) {
       return;
     }
 
@@ -711,7 +819,11 @@ export function CheckoutExperience({
 
         setPaymentStatus(response.data);
 
-        if (!isPaidStatus(response.data) && !isExpiredStatus(response.data)) {
+        if (
+          !isPaidStatus(response.data) &&
+          !isExpiredStatus(response.data) &&
+          !isFailedStatus(response.data)
+        ) {
           timeoutId = setTimeout(pollPaymentStatus, 5000);
         }
       } catch (error) {
@@ -731,7 +843,14 @@ export function CheckoutExperience({
         clearTimeout(timeoutId);
       }
     };
-  }, [authToken, orderResponse?.order_id, paymentStatus, step]);
+  }, [
+    authToken,
+    cardPaymentSubmitted,
+    isSelectedCreditCard,
+    orderResponse?.order_id,
+    paymentStatus,
+    step,
+  ]);
 
   const resetFlow = () => {
     setStep("language");
@@ -744,10 +863,17 @@ export function CheckoutExperience({
     setSelectedBillingCode(null);
     setPaymentBillingType("one_time");
     setClassChoiceMode("class");
+    setShowLoginPassword(false);
+    setShowRegisterPassword(false);
+    setShowConfirmPassword(false);
+    setRegisterEmailTouched(false);
+    setConfirmPasswordTouched(false);
     setAuthToken(null);
     setOrderPayload(null);
     setOrderResponse(null);
     setPaymentStatus(null);
+    setCardPaymentSubmitted(false);
+    setCardPaymentLoading(false);
     setFormError(null);
     setPaymentError(null);
     setOffersError(null);
@@ -779,6 +905,7 @@ export function CheckoutExperience({
     setSelectedBillingCode(null);
     setPaymentBillingType("one_time");
     setClassChoiceMode("class");
+    setCardPaymentSubmitted(false);
     setStep("selection");
   };
 
@@ -787,18 +914,26 @@ export function CheckoutExperience({
       return null;
     }
 
+    const creditCardOption = isCreditCardOption(selectedBilling);
     const payload: HotsiteOrderPayload = {
       offer_id: offerDetail.id,
       billing_option_code: selectedBilling.code,
-      installments: 1,
     };
 
     if (classChoiceMode === "class" && selectedClassId) {
       payload.student_class_id = selectedClassId;
+
+      if (creditCardOption) {
+        payload.preference_period = [];
+      }
     }
 
     if (classChoiceMode === "period" && selectedPeriod) {
       payload.preference_period = [selectedPeriod];
+    }
+
+    if (!creditCardOption) {
+      payload.installments = 1;
     }
 
     return payload;
@@ -808,7 +943,7 @@ export function CheckoutExperience({
     const payload = buildOrderPayload();
 
     if (!payload || !canContinueToAccount) {
-      setFormError("Selecione turma ou turno e uma forma de pagamento PIX.");
+      setFormError("Selecione turma ou turno e uma forma de pagamento.");
       return;
     }
 
@@ -833,7 +968,45 @@ export function CheckoutExperience({
     setOrderResponse(order.data);
     setPaymentStatus(null);
     setPaymentError(null);
+    setCardPaymentSubmitted(false);
     setStep("payment");
+  };
+
+  const handleStartCardPayment = async (
+    payload: HotsiteStartCardPaymentPayload
+  ) => {
+    if (!authToken || !orderResponse?.order_id) {
+      setPaymentError(
+        "Não foi possível identificar a autenticação ou o pedido."
+      );
+      return;
+    }
+
+    setCardPaymentLoading(true);
+    setPaymentError(null);
+
+    try {
+      await checkoutService.startCardPayment(
+        orderResponse.order_id,
+        payload,
+        authToken
+      );
+      setCardPaymentSubmitted(true);
+
+      try {
+        const response = await checkoutService.getPaymentStatus(
+          orderResponse.order_id,
+          authToken
+        );
+        setPaymentStatus(response.data);
+      } catch {
+        // O polling continuará consultando o status após o pagamento ser enviado.
+      }
+    } catch (error) {
+      setPaymentError(getApiErrorMessage(error));
+    } finally {
+      setCardPaymentLoading(false);
+    }
   };
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
@@ -860,8 +1033,21 @@ export function CheckoutExperience({
 
   const handleRegister = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setAuthLoading(true);
     setFormError(null);
+    setRegisterEmailTouched(true);
+    setConfirmPasswordTouched(true);
+
+    if (!isValidEmail(registerForm.email)) {
+      setFormError("Informe um e-mail válido.");
+      return;
+    }
+
+    if (registerForm.password !== registerForm.confirmPassword) {
+      setFormError("As senhas não coincidem.");
+      return;
+    }
+
+    setAuthLoading(true);
 
     try {
       const response = await checkoutService.createUser({
@@ -870,7 +1056,7 @@ export function CheckoutExperience({
         cpf: registerForm.cpf.replace(/\D/g, ""),
         email: registerForm.email,
         password: registerForm.password,
-        phone: registerForm.phone,
+        phone: registerForm.phone.replace(/\D/g, ""),
         zip_code: registerForm.zipCode.replace(/\D/g, ""),
         city: registerForm.city,
         state: registerForm.state,
@@ -977,7 +1163,7 @@ export function CheckoutExperience({
 
       <p className="text-xs leading-5 text-muted-foreground">
         O botão será habilitado após escolher turma ou turno e uma forma de
-        pagamento PIX.
+        pagamento.
       </p>
 
       {formError ? (
@@ -1008,20 +1194,18 @@ export function CheckoutExperience({
         </h3>
         <div className="grid gap-3 sm:grid-cols-2">
           {options.map((option) => {
-            const blocked = isCreditCardOption(option);
             const selected = selectedBillingCode === option.code;
 
             return (
               <button
                 key={option.id}
                 type="button"
-                disabled={blocked}
                 onClick={() => setSelectedBillingCode(option.code)}
                 className={`rounded-[1.1rem] border p-4 text-left transition ${
                   selected
                     ? "border-primary bg-accent shadow-sm"
                     : "border-border bg-white hover:border-primary/50"
-                } ${blocked ? "cursor-not-allowed opacity-60" : ""}`}
+                }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1173,6 +1357,19 @@ export function CheckoutExperience({
           {step === "offer" && selectedLanguage ? (
             <div className="space-y-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 self-start rounded-full px-5"
+                  onClick={() => {
+                    setStep("language");
+                    setOffers([]);
+                    setSelectedOfferSummary(null);
+                  }}
+                >
+                  <ArrowLeft className="size-4" />
+                  Trocar idioma
+                </Button>
                 <div className="flex items-center gap-3">
                   <Image
                     src={selectedLanguage.image}
@@ -1190,19 +1387,6 @@ export function CheckoutExperience({
                     </p>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-10 rounded-full px-5"
-                  onClick={() => {
-                    setStep("language");
-                    setOffers([]);
-                    setSelectedOfferSummary(null);
-                  }}
-                >
-                  <ArrowLeft className="size-4" />
-                  Trocar idioma
-                </Button>
               </div>
 
               {offersLoading ? <CheckoutLoading /> : null}
@@ -1455,6 +1639,20 @@ export function CheckoutExperience({
 
           {step === "account" ? (
             <div className="mx-auto max-w-3xl space-y-6">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 rounded-full px-5"
+                onClick={() => {
+                  setFormError(null);
+                  setStep("selection");
+                }}
+              >
+                <ArrowLeft className="size-4" />
+                Voltar para seleção{" "}
+                {classChoiceMode === "class" ? "da turma" : "do turno"}
+              </Button>
+
               <div className="flex flex-col gap-3 rounded-[1.3rem] border border-border bg-muted/30 p-4 sm:flex-row">
                 <Button
                   type="button"
@@ -1462,6 +1660,7 @@ export function CheckoutExperience({
                   className="h-11 flex-1 rounded-xl"
                   onClick={() => {
                     setAuthMode("login");
+                    setShowLoginPassword(false);
                     setFormError(null);
                   }}
                 >
@@ -1474,6 +1673,7 @@ export function CheckoutExperience({
                   className="h-11 flex-1 rounded-xl"
                   onClick={() => {
                     setAuthMode("register");
+                    setShowLoginPassword(false);
                     setFormError(null);
                   }}
                 >
@@ -1497,6 +1697,7 @@ export function CheckoutExperience({
                     <Input
                       type="email"
                       required
+                      autoComplete="username"
                       value={loginForm.email}
                       onChange={(event) =>
                         setLoginForm((current) => ({
@@ -1508,18 +1709,42 @@ export function CheckoutExperience({
                     />
                   </Field>
                   <Field label="Senha">
-                    <Input
-                      type="password"
-                      required
-                      value={loginForm.password}
-                      onChange={(event) =>
-                        setLoginForm((current) => ({
-                          ...current,
-                          password: event.target.value,
-                        }))
-                      }
-                      className="h-11"
-                    />
+                    <div className="relative">
+                      <Input
+                        type={showLoginPassword ? "text" : "password"}
+                        required
+                        autoComplete="current-password"
+                        value={loginForm.password}
+                        onChange={(event) =>
+                          setLoginForm((current) => ({
+                            ...current,
+                            password: event.target.value,
+                          }))
+                        }
+                        className="h-11 pr-11"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-1.5 top-1.5 text-muted-foreground"
+                        aria-label={
+                          showLoginPassword
+                            ? "Ocultar senha"
+                            : "Mostrar senha"
+                        }
+                        aria-pressed={showLoginPassword}
+                        onClick={() =>
+                          setShowLoginPassword((current) => !current)
+                        }
+                      >
+                        {showLoginPassword ? (
+                          <EyeOff className="size-4" />
+                        ) : (
+                          <Eye className="size-4" />
+                        )}
+                      </Button>
+                    </div>
                   </Field>
                   <Button
                     type="submit"
@@ -1567,11 +1792,17 @@ export function CheckoutExperience({
                     <Field label="CPF">
                       <Input
                         required
+                        inputMode="numeric"
+                        autoComplete="off"
+                        maxLength={14}
+                        pattern="\d{3}\.\d{3}\.\d{3}-\d{2}"
+                        title="Digite os 11 números do CPF"
+                        placeholder="000.000.000-00"
                         value={registerForm.cpf}
                         onChange={(event) =>
                           setRegisterForm((current) => ({
                             ...current,
-                            cpf: event.target.value,
+                            cpf: formatCpf(event.target.value),
                           }))
                         }
                         className="h-11"
@@ -1580,43 +1811,219 @@ export function CheckoutExperience({
                     <Field label="Telefone">
                       <Input
                         required
+                        type="tel"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        maxLength={15}
+                        pattern="\(\d{2}\) \d{4,5}-\d{4}"
+                        title="Digite o telefone com DDD"
+                        placeholder="(00) 00000-0000"
                         value={registerForm.phone}
                         onChange={(event) =>
                           setRegisterForm((current) => ({
                             ...current,
-                            phone: event.target.value,
+                            phone: formatPhone(event.target.value),
                           }))
                         }
                         className="h-11"
                       />
                     </Field>
-                    <Field label="E-mail">
-                      <Input
-                        type="email"
-                        required
-                        value={registerForm.email}
-                        onChange={(event) =>
-                          setRegisterForm((current) => ({
-                            ...current,
-                            email: event.target.value,
-                          }))
-                        }
-                        className="h-11"
-                      />
-                    </Field>
+                    <div className="sm:col-span-2">
+                      <Field label="E-mail">
+                        <div className="space-y-2">
+                          <Input
+                            type="email"
+                            required
+                            autoComplete="email"
+                            inputMode="email"
+                            maxLength={254}
+                            pattern="^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$"
+                            title="Digite um e-mail completo, incluindo @ e domínio"
+                            placeholder="nome@exemplo.com"
+                            value={registerForm.email}
+                            aria-invalid={registerEmailInvalid}
+                            aria-describedby={
+                              registerEmailInvalid
+                                ? "register-email-error"
+                                : undefined
+                            }
+                            onBlur={() => setRegisterEmailTouched(true)}
+                            onInvalid={() => setRegisterEmailTouched(true)}
+                            onChange={(event) =>
+                              setRegisterForm((current) => ({
+                                ...current,
+                                email: event.target.value,
+                              }))
+                            }
+                            className="h-11"
+                          />
+                          {registerEmailInvalid ? (
+                            <p
+                              id="register-email-error"
+                              className="text-sm font-medium text-destructive"
+                              role="alert"
+                            >
+                              E-mail inválido. Use o formato{" "}
+                              nome@provedor.com.
+                            </p>
+                          ) : null}
+                          {registerEmailSuggestions.length > 0 ? (
+                            <div
+                              className="flex flex-wrap gap-2"
+                              aria-label="Sugestões de e-mail"
+                            >
+                              {registerEmailSuggestions.map((suggestion) => (
+                                <Button
+                                  key={suggestion}
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="max-w-full rounded-full px-3 text-xs"
+                                  onClick={() => {
+                                    setRegisterForm((current) => ({
+                                      ...current,
+                                      email: suggestion,
+                                    }));
+                                    setRegisterEmailTouched(true);
+                                  }}
+                                >
+                                  <span className="truncate">{suggestion}</span>
+                                </Button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      </Field>
+                    </div>
                     <Field label="Senha">
-                      <Input
-                        type="password"
-                        required
-                        value={registerForm.password}
-                        onChange={(event) =>
-                          setRegisterForm((current) => ({
-                            ...current,
-                            password: event.target.value,
-                          }))
-                        }
-                        className="h-11"
-                      />
+                      <div className="space-y-3">
+                        <div className="relative">
+                          <Input
+                            type={showRegisterPassword ? "text" : "password"}
+                            required
+                            minLength={8}
+                            autoComplete="new-password"
+                            value={registerForm.password}
+                            onChange={(event) =>
+                              setRegisterForm((current) => ({
+                                ...current,
+                                password: event.target.value,
+                              }))
+                            }
+                            className="h-11 pr-11"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-1.5 top-1.5 text-muted-foreground"
+                            aria-label={
+                              showRegisterPassword
+                                ? "Ocultar senha"
+                                : "Mostrar senha"
+                            }
+                            aria-pressed={showRegisterPassword}
+                            onClick={() =>
+                              setShowRegisterPassword((current) => !current)
+                            }
+                          >
+                            {showRegisterPassword ? (
+                              <EyeOff className="size-4" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}
+                          </Button>
+                        </div>
+                        {registerForm.password ? (
+                          <div
+                            className="space-y-2"
+                            role="status"
+                            aria-live="polite"
+                          >
+                            <div className="flex items-center justify-between gap-3 text-xs">
+                              <span className="text-muted-foreground">
+                                Força da senha
+                              </span>
+                              <span className="font-semibold text-foreground">
+                                {passwordStrength.label}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {[1, 2, 3, 4].map((level) => (
+                                <span
+                                  key={level}
+                                  className={`h-1.5 rounded-full ${
+                                    level <= passwordStrength.level
+                                      ? passwordStrength.color
+                                      : "bg-muted"
+                                  }`}
+                                />
+                              ))}
+                            </div>
+                            <p className="text-xs leading-5 text-muted-foreground">
+                              Use 8 ou mais caracteres, com letras maiúsculas e
+                              minúsculas, número e símbolo.
+                            </p>
+                          </div>
+                        ) : null}
+                      </div>
+                    </Field>
+                    <Field label="Confirmar senha">
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <Input
+                            type={showConfirmPassword ? "text" : "password"}
+                            required
+                            minLength={8}
+                            autoComplete="new-password"
+                            value={registerForm.confirmPassword}
+                            aria-invalid={passwordsDoNotMatch}
+                            aria-describedby={
+                              passwordsDoNotMatch
+                                ? "confirm-password-error"
+                                : undefined
+                            }
+                            onBlur={() => setConfirmPasswordTouched(true)}
+                            onChange={(event) =>
+                              setRegisterForm((current) => ({
+                                ...current,
+                                confirmPassword: event.target.value,
+                              }))
+                            }
+                            className="h-11 pr-11"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-1.5 top-1.5 text-muted-foreground"
+                            aria-label={
+                              showConfirmPassword
+                                ? "Ocultar confirmação da senha"
+                                : "Mostrar confirmação da senha"
+                            }
+                            aria-pressed={showConfirmPassword}
+                            onClick={() =>
+                              setShowConfirmPassword((current) => !current)
+                            }
+                          >
+                            {showConfirmPassword ? (
+                              <EyeOff className="size-4" />
+                            ) : (
+                              <Eye className="size-4" />
+                            )}
+                          </Button>
+                        </div>
+                        {passwordsDoNotMatch ? (
+                          <p
+                            id="confirm-password-error"
+                            className="text-sm font-medium text-destructive"
+                            role="alert"
+                          >
+                            As senhas não coincidem.
+                          </p>
+                        ) : null}
+                      </div>
                     </Field>
                     <Field label="CEP">
                       <div className="relative">
@@ -1749,17 +2156,26 @@ export function CheckoutExperience({
                     As instruções de login serão encaminhadas no email e
                     entraremos em contato.
                   </p>
-                  {paymentStatus?.latest_charge?.payment_receipt_url ? (
+                  <div className="mt-5 flex flex-col items-center justify-center gap-3 sm:flex-row">
+                    {paymentStatus?.latest_charge?.payment_receipt_url ? (
+                      <a
+                        href={paymentStatus.latest_charge.payment_receipt_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border bg-white px-5 text-sm font-semibold text-foreground transition hover:bg-muted"
+                      >
+                        <ReceiptText className="size-4" />
+                        Ver recibo
+                      </a>
+                    ) : null}
                     <a
-                      href={paymentStatus.latest_charge.payment_receipt_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-5 inline-flex h-11 items-center justify-center gap-2 rounded-full border border-border bg-white px-5 text-sm font-semibold text-foreground transition hover:bg-muted"
+                      href="https://aluno.escolaveli.com"
+                      className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/80"
                     >
-                      <ReceiptText className="size-4" />
-                      Ver recibo
+                      <UserRound className="size-4" />
+                      Fazer login
                     </a>
-                  ) : null}
+                  </div>
                 </div>
               ) : isExpiredStatus(paymentStatus) ? (
                 <div className="rounded-[1.5rem] border border-destructive/20 bg-destructive/5 p-6 text-center">
@@ -1777,6 +2193,53 @@ export function CheckoutExperience({
                   >
                     Reiniciar checkout
                   </Button>
+                </div>
+              ) : isFailedStatus(paymentStatus) && isSelectedCreditCard ? (
+                <div className="rounded-[1.5rem] border border-destructive/20 bg-destructive/5 p-6 text-center">
+                  <CreditCard className="mx-auto size-12 text-destructive" />
+                  <h2 className="mt-4 font-heading text-3xl font-semibold tracking-[-0.03em] text-foreground">
+                    Pagamento não aprovado
+                  </h2>
+                  <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+                    Revise os dados ou tente outro cartão.
+                  </p>
+                  <Button
+                    type="button"
+                    className="mt-5 h-11 rounded-full px-5"
+                    onClick={() => {
+                      setPaymentStatus(null);
+                      setPaymentError(null);
+                      setCardPaymentSubmitted(false);
+                    }}
+                  >
+                    Tentar novamente
+                  </Button>
+                </div>
+              ) : isSelectedCreditCard &&
+                selectedBilling &&
+                !cardPaymentSubmitted ? (
+                <CreditCardPaymentForm
+                  key={selectedBilling.code}
+                  billingOption={selectedBilling}
+                  loading={cardPaymentLoading}
+                  error={paymentError}
+                  onSubmit={handleStartCardPayment}
+                />
+              ) : isSelectedCreditCard ? (
+                <div className="rounded-[1.5rem] border border-border bg-white p-8 text-center shadow-sm">
+                  <Loader2 className="mx-auto size-12 animate-spin text-primary" />
+                  <h2 className="mt-4 font-heading text-3xl font-semibold tracking-[-0.03em] text-foreground">
+                    Processando pagamento
+                  </h2>
+                  <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+                    Os dados foram enviados. Aguarde enquanto confirmamos o
+                    pagamento com a operadora do cartão.
+                  </p>
+                  {paymentError ? (
+                    <p className="mx-auto mt-5 max-w-xl rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+                      {paymentError}
+                    </p>
+                  ) : null}
                 </div>
               ) : (
                 <div className="grid gap-6 lg:grid-cols-[320px_1fr]">

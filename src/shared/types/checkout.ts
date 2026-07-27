@@ -199,9 +199,31 @@ export type AuthenticateHotsiteUserPayload = {
 export type HotsiteOrderPayload = {
   offer_id: number;
   billing_option_code: string;
-  installments: number;
+  installments?: number;
   student_class_id?: number;
   preference_period?: string[];
+};
+
+export type HotsiteCreditCard = {
+  name: string;
+  number: string;
+  cvv: string;
+  expiration_date: string;
+};
+
+export type HotsiteStartCardPaymentPayload = {
+  accept_contract: true;
+  holder_is_customer: boolean;
+  credit_card: HotsiteCreditCard;
+  installments?: number;
+  name?: string;
+  phone?: string;
+  address?: string;
+  address_number?: string;
+  province?: string;
+  postal_code?: string;
+  city?: string;
+  state?: string;
 };
 
 export type HotsiteOrderContract = {

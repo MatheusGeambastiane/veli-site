@@ -12,6 +12,7 @@ import type {
   HotsiteOrderResponse,
   HotsiteOffersResponse,
   HotsitePaymentStatusResponse,
+  HotsiteStartCardPaymentPayload,
   ViaCepResponse,
 } from "@/shared/types";
 
@@ -62,6 +63,21 @@ export const checkoutService = {
   ): Promise<ApiResponse<HotsiteOrderResponse>> {
     return httpClient.post<HotsiteOrderResponse, HotsiteOrderPayload>(
       "/hotsite/orders/",
+      payload,
+      {
+        requiresAuth: true,
+        tokenProvider: () => token,
+      }
+    );
+  },
+
+  startCardPayment(
+    orderId: number | string,
+    payload: HotsiteStartCardPaymentPayload,
+    token: string
+  ): Promise<ApiResponse<unknown>> {
+    return httpClient.post<unknown, HotsiteStartCardPaymentPayload>(
+      `/hotsite/orders/${encodeURIComponent(String(orderId))}/start-payment/`,
       payload,
       {
         requiresAuth: true,
