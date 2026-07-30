@@ -34,7 +34,7 @@ export function SiteHeader() {
 
         <div className="hidden items-center gap-4 md:flex">
           <Link
-            href="/blog"
+            href="https://aluno.escolaveli.com/auth"
             className="text-sm font-semibold text-foreground transition hover:text-primary"
           >
             Entrar
