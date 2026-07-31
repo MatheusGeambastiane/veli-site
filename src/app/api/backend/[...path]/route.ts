@@ -1,7 +1,10 @@
 import type { NextRequest } from "next/server";
 
 const proxyPrefix = "/api/backend";
-const fallbackBackendUrl = "http://localhost:8000";
+const fallbackBackendUrl =
+  process.env.NODE_ENV === "production"
+    ? "https://api.escolaveli.com"
+    : "http://localhost:8000";
 
 function getBackendUrl() {
   return (
