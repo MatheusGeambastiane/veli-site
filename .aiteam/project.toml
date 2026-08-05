@@ -1,0 +1,8 @@
+schema_version = 1
+id = "veli-site"
+kind = "nextjs"
+orchestrator = "../aiteam"
+implementation_agent = "nextjs"
+qa_agent = "qa"
+qa_commands = ["npm run lint", "npm run build"]
+

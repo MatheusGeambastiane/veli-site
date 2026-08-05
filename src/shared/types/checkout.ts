@@ -172,7 +172,7 @@ export type HotsiteAuthenticatedUser = {
   last_name?: string;
   email?: string;
   phone?: string;
-  tax_id?: string;
+  tax_id?: string | null;
   cep?: string;
   zip_code?: string;
   city?: string;
@@ -183,9 +183,14 @@ export type HotsiteAuthenticatedUser = {
   province?: string;
   role?: string;
   access_token?: string;
+  refresh_token?: string;
   access?: string;
   refresh?: string;
   token?: string;
+  profile_completed?: boolean;
+  missing_fields?: string[];
+  account_created?: boolean;
+  linked_existing_user?: boolean;
   student_full_name?: string;
   profile_pic_url?: string | null;
   languages?: HotsiteLanguage[];
@@ -194,6 +199,25 @@ export type HotsiteAuthenticatedUser = {
 export type AuthenticateHotsiteUserPayload = {
   email: string;
   password: string;
+};
+
+export type AuthenticateHotsiteGooglePayload = {
+  credential: string;
+};
+
+export type UpdateHotsiteUserPayload = {
+  first_name: string;
+  last_name: string;
+  cpf: string;
+  phone: string;
+  cep: string;
+  address: string;
+  address_number: string;
+  zip_code: string;
+  province: string;
+  city: string;
+  state: string;
+  country: string;
 };
 
 export type HotsiteOrderPayload = {

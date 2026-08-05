@@ -34,7 +34,19 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CreditCardPaymentForm } from "@/features/checkout/credit-card-payment-form";
+import { GoogleSignInButton } from "@/features/checkout/google-sign-in-button";
+import { ProfileCompletionForm } from "@/features/checkout/profile-completion-form";
 import { checkoutService } from "@/features/checkout/services/checkout-service";
+import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
+import {
+  checkoutCartActionEvent,
+  clearCheckoutCart,
+  consumeCheckoutCartIntent,
+  readCheckoutCart,
+  saveCheckoutCart,
+  type CheckoutCartAction,
+  type CheckoutCartItem,
+} from "@/shared/lib/checkout-cart";
 import type {
   ApiError,
   HotsiteAuthenticatedUser,
@@ -46,11 +58,13 @@ import type {
   HotsiteOrderResponse,
   HotsitePaymentStatusResponse,
   HotsiteStartCardPaymentPayload,
+  UpdateHotsiteUserPayload,
 } from "@/shared/types";
 
 type CheckoutStep = "language" | "offer" | "selection" | "account" | "payment";
 type ClassChoiceMode = "class" | "period";
 type AuthMode = "login" | "register";
+type AuthOrigin = "checkout" | "cart";
 type PeriodValue = "morning" | "afternoon" | "night";
 type PaymentBillingType = "one_time" | "recurring";
 
@@ -376,10 +390,6 @@ function isCreditCardOption(option?: HotsiteBillingOption | null) {
   );
 }
 
-function getAuthToken(user: HotsiteAuthenticatedUser) {
-  return user.access ?? user.token ?? user.access_token ?? "";
-}
-
 function getPaymentValue(order: HotsiteOrderResponse | null) {
   if (!order) {
     return undefined;
@@ -527,6 +537,7 @@ export function CheckoutExperience({
   const [paymentBillingType, setPaymentBillingType] =
     useState<PaymentBillingType>("one_time");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [authOrigin, setAuthOrigin] = useState<AuthOrigin>("checkout");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -553,6 +564,9 @@ export function CheckoutExperience({
     country: "Brasil",
   });
   const [authToken, setAuthToken] = useState<string | null>(null);
+  const [hasAuthenticatedSession, setHasAuthenticatedSession] = useState(false);
+  const [googleProfileUser, setGoogleProfileUser] =
+    useState<HotsiteAuthenticatedUser | null>(null);
   const [orderPayload, setOrderPayload] = useState<HotsiteOrderPayload | null>(
     null
   );
@@ -655,14 +669,117 @@ export function CheckoutExperience({
     }
 
     if (step === "account") {
-      return "Entrar ou criar conta";
+      return googleProfileUser ? "Complete seu perfil" : "Entrar ou criar conta";
     }
 
     return isSelectedCreditCard ? "Pagamento com cartão" : "Pagamento PIX";
-  }, [isSelectedCreditCard, step]);
+  }, [googleProfileUser, isSelectedCreditCard, step]);
   const currentStepIndex = checkoutSteps.findIndex(
     (checkoutStep) => checkoutStep.value === step
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreCart() {
+      await Promise.resolve();
+      const storedItem = readCheckoutCart();
+
+      let intent: "continue" | "login" | null = null;
+
+      try {
+        intent = consumeCheckoutCartIntent();
+      } catch {
+        intent = null;
+      }
+
+      if (!intent && window.location.hash === "#login") {
+        intent = "login";
+      }
+
+      if (window.location.hash === "#login") {
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${window.location.search}`
+        );
+      }
+
+      if (!cancelled && storedItem) {
+        setSelectedLanguage(storedItem.language);
+        setSelectedOfferSummary(storedItem.offer);
+        setAuthOrigin(intent === "login" ? "cart" : "checkout");
+        setStep(intent === "login" ? "account" : "selection");
+      }
+    }
+
+    const applyCartAction = (action: CheckoutCartAction) => {
+      const storedItem = readCheckoutCart();
+
+      if (action === "removed") {
+        setSelectedLanguage(null);
+        setSelectedOfferSummary(null);
+        setOfferDetail(null);
+        setOrderPayload(null);
+        setStep("language");
+        return;
+      }
+
+      if (!storedItem) {
+        return;
+      }
+
+      setSelectedLanguage(storedItem.language);
+      setSelectedOfferSummary(storedItem.offer);
+      setOfferDetail(null);
+      setOfferDetailError(null);
+      setAuthOrigin(action === "login" ? "cart" : "checkout");
+      setAuthMode("login");
+      setFormError(null);
+      setStep(action === "login" ? "account" : "selection");
+    };
+
+    const handleCartAction = (event: Event) => {
+      try {
+        consumeCheckoutCartIntent();
+      } catch {
+        // O evento em memória já contém a intenção necessária.
+      }
+      applyCartAction((event as CustomEvent<CheckoutCartAction>).detail);
+    };
+
+    void restoreCart();
+    window.addEventListener(checkoutCartActionEvent, handleCartAction);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(checkoutCartActionEvent, handleCartAction);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSession() {
+      try {
+        const session = await checkoutService.getSessionStatus();
+
+        if (!cancelled) {
+          setHasAuthenticatedSession(session.authenticated);
+        }
+      } catch {
+        if (!cancelled) {
+          setHasAuthenticatedSession(false);
+        }
+      }
+    }
+
+    void loadSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!shouldLoadLanguages) {
@@ -863,12 +980,14 @@ export function CheckoutExperience({
     setSelectedBillingCode(null);
     setPaymentBillingType("one_time");
     setClassChoiceMode("class");
+    setAuthOrigin("checkout");
     setShowLoginPassword(false);
     setShowRegisterPassword(false);
     setShowConfirmPassword(false);
     setRegisterEmailTouched(false);
     setConfirmPasswordTouched(false);
     setAuthToken(null);
+    setGoogleProfileUser(null);
     setOrderPayload(null);
     setOrderResponse(null);
     setPaymentStatus(null);
@@ -897,7 +1016,31 @@ export function CheckoutExperience({
     setStep("offer");
   };
 
+  const saveOfferToCart = (offer: HotsiteCheckoutOffer) => {
+    if (!selectedLanguage) {
+      return;
+    }
+
+    const item: CheckoutCartItem = {
+      version: 1,
+      language: selectedLanguage,
+      offer,
+      savedAt: new Date().toISOString(),
+    };
+
+    setFormError(null);
+
+    try {
+      saveCheckoutCart(item);
+    } catch {
+      setFormError(
+        "A oferta foi adicionada, mas não pôde ser salva neste navegador."
+      );
+    }
+  };
+
   const handleOfferSelect = (offer: HotsiteCheckoutOffer) => {
+    saveOfferToCart(offer);
     setSelectedOfferSummary(offer);
     setOfferDetail(null);
     setSelectedClassId(null);
@@ -948,12 +1091,22 @@ export function CheckoutExperience({
     }
 
     setFormError(null);
+    setAuthOrigin("checkout");
     setOrderPayload(payload);
     sessionStorage.setItem(checkoutSessionKey, JSON.stringify(payload));
+
+    if (hasAuthenticatedSession) {
+      setAuthLoading(true);
+      void createOrderAfterAuth()
+        .catch((error) => setFormError(getApiErrorMessage(error)))
+        .finally(() => setAuthLoading(false));
+      return;
+    }
+
     setStep("account");
   };
 
-  const createOrderAfterAuth = async (token: string) => {
+  const createOrderAfterAuth = async (token?: string) => {
     const storedPayload =
       orderPayload ??
       (JSON.parse(
@@ -965,6 +1118,12 @@ export function CheckoutExperience({
     }
 
     const order = await checkoutService.createOrder(storedPayload, token);
+    try {
+      clearCheckoutCart();
+      window.sessionStorage.removeItem(checkoutSessionKey);
+    } catch {
+      // O pedido já foi criado; falhas de armazenamento não interrompem o fluxo.
+    }
     setOrderResponse(order.data);
     setPaymentStatus(null);
     setPaymentError(null);
@@ -975,7 +1134,7 @@ export function CheckoutExperience({
   const handleStartCardPayment = async (
     payload: HotsiteStartCardPaymentPayload
   ) => {
-    if (!authToken || !orderResponse?.order_id) {
+    if ((!authToken && !hasAuthenticatedSession) || !orderResponse?.order_id) {
       setPaymentError(
         "Não foi possível identificar a autenticação ou o pedido."
       );
@@ -989,14 +1148,14 @@ export function CheckoutExperience({
       await checkoutService.startCardPayment(
         orderResponse.order_id,
         payload,
-        authToken
+        authToken ?? undefined
       );
       setCardPaymentSubmitted(true);
 
       try {
         const response = await checkoutService.getPaymentStatus(
           orderResponse.order_id,
-          authToken
+          authToken ?? undefined
         );
         setPaymentStatus(response.data);
       } catch {
@@ -1015,15 +1174,18 @@ export function CheckoutExperience({
     setFormError(null);
 
     try {
-      const response = await checkoutService.authenticateUser(loginForm);
-      const token = getAuthToken(response.data);
+      await checkoutService.authenticateUser(loginForm);
+      setAuthToken(null);
+      setHasAuthenticatedSession(true);
+      notifyAuthSessionChanged();
 
-      if (!token) {
-        throw new Error("Token de acesso não retornado no login.");
+      if (authOrigin === "cart") {
+        setAuthOrigin("checkout");
+        setStep("selection");
+        return;
       }
 
-      setAuthToken(token);
-      await createOrderAfterAuth(token);
+      await createOrderAfterAuth();
     } catch (error) {
       setFormError(getApiErrorMessage(error));
     } finally {
@@ -1050,7 +1212,7 @@ export function CheckoutExperience({
     setAuthLoading(true);
 
     try {
-      const response = await checkoutService.createUser({
+      await checkoutService.createUser({
         first_name: registerForm.firstName,
         last_name: registerForm.lastName,
         cpf: registerForm.cpf.replace(/\D/g, ""),
@@ -1065,14 +1227,79 @@ export function CheckoutExperience({
         address_number: registerForm.addressNumber,
         province: registerForm.province,
       });
-      const token = getAuthToken(response.data);
+      setAuthToken(null);
+      setHasAuthenticatedSession(true);
+      notifyAuthSessionChanged();
 
-      if (!token) {
-        throw new Error("Token de acesso não retornado no cadastro.");
+      if (authOrigin === "cart") {
+        setAuthOrigin("checkout");
+        setStep("selection");
+        return;
       }
 
-      setAuthToken(token);
-      await createOrderAfterAuth(token);
+      await createOrderAfterAuth();
+    } catch (error) {
+      setFormError(getApiErrorMessage(error));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleGoogleCredential = async (credential: string) => {
+    if (authLoading) {
+      return;
+    }
+
+    setAuthLoading(true);
+    setFormError(null);
+
+    try {
+      const response = await checkoutService.authenticateWithGoogle({
+        credential,
+      });
+
+      setAuthToken(null);
+      setHasAuthenticatedSession(true);
+      notifyAuthSessionChanged();
+
+      if (response.data.profile_completed !== true) {
+        setGoogleProfileUser(response.data);
+        return;
+      }
+
+      if (authOrigin === "cart") {
+        setAuthOrigin("checkout");
+        setStep("selection");
+        return;
+      }
+
+      await createOrderAfterAuth();
+    } catch (error) {
+      setFormError(getApiErrorMessage(error));
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleCompleteGoogleProfile = async (
+    payload: UpdateHotsiteUserPayload
+  ) => {
+    setAuthLoading(true);
+    setFormError(null);
+
+    try {
+      await checkoutService.updateCurrentUser(payload);
+      notifyAuthSessionChanged();
+
+      if (authOrigin === "cart") {
+        setGoogleProfileUser(null);
+        setAuthOrigin("checkout");
+        setStep("selection");
+        return;
+      }
+
+      await createOrderAfterAuth();
+      setGoogleProfileUser(null);
     } catch (error) {
       setFormError(getApiErrorMessage(error));
     } finally {
@@ -1153,10 +1380,14 @@ export function CheckoutExperience({
       <Button
         type="button"
         className="h-12 w-full rounded-xl"
-        disabled={!canContinueToAccount}
+        disabled={!canContinueToAccount || authLoading}
         onClick={handleContinueToAccount}
       >
-        <CreditCard className="size-4" />
+        {authLoading ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          <CreditCard className="size-4" />
+        )}
         Seguir para pagamento
         <ArrowRight className="size-4" />
       </Button>
@@ -1242,9 +1473,9 @@ export function CheckoutExperience({
         <div className="border-b border-border pb-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
+              {/* <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
                 Checkout Veli
-              </p>
+              </p> */}
               <h1 className="mt-2 font-heading text-3xl font-semibold tracking-[-0.03em] text-foreground md:text-4xl">
                 {title}
               </h1>
@@ -1653,11 +1884,27 @@ export function CheckoutExperience({
                 {classChoiceMode === "class" ? "da turma" : "do turno"}
               </Button>
 
+              {googleProfileUser ? (
+                <ProfileCompletionForm
+                  key={googleProfileUser.id ?? googleProfileUser.email}
+                  user={googleProfileUser}
+                  submitting={authLoading}
+                  error={formError}
+                  submitLabel={
+                    authOrigin === "cart"
+                      ? "Salvar perfil e continuar"
+                      : undefined
+                  }
+                  onSubmit={handleCompleteGoogleProfile}
+                />
+              ) : (
+                <>
               <div className="flex flex-col gap-3 rounded-[1.3rem] border border-border bg-muted/30 p-4 sm:flex-row">
                 <Button
                   type="button"
                   variant={authMode === "login" ? "default" : "outline"}
                   className="h-11 flex-1 rounded-xl"
+                  disabled={authLoading}
                   onClick={() => {
                     setAuthMode("login");
                     setShowLoginPassword(false);
@@ -1671,6 +1918,7 @@ export function CheckoutExperience({
                   type="button"
                   variant={authMode === "register" ? "default" : "outline"}
                   className="h-11 flex-1 rounded-xl"
+                  disabled={authLoading}
                   onClick={() => {
                     setAuthMode("register");
                     setShowLoginPassword(false);
@@ -1754,8 +2002,22 @@ export function CheckoutExperience({
                     {authLoading ? (
                       <Loader2 className="size-4 animate-spin" />
                     ) : null}
-                    Entrar e criar pedido
+                    {authOrigin === "cart"
+                      ? "Entrar e continuar"
+                      : "Entrar e criar pedido"}
                   </Button>
+                  <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                    <span className="h-px flex-1 bg-border" />
+                    ou
+                    <span className="h-px flex-1 bg-border" />
+                  </div>
+                  <div className="rounded-xl bg-white">
+                    <GoogleSignInButton
+                      disabled={authLoading}
+                      onCredential={handleGoogleCredential}
+                      onError={setFormError}
+                    />
+                  </div>
                 </form>
               ) : (
                 <form
@@ -2137,9 +2399,13 @@ export function CheckoutExperience({
                     {authLoading ? (
                       <Loader2 className="size-4 animate-spin" />
                     ) : null}
-                    Criar conta e pedido
+                    {authOrigin === "cart"
+                      ? "Criar conta e continuar"
+                      : "Criar conta e pedido"}
                   </Button>
                 </form>
+              )}
+                </>
               )}
             </div>
           ) : null}

@@ -2,6 +2,7 @@ import { publicEnv } from "@/shared/lib/env";
 import { httpClient } from "@/shared/lib/http-client";
 import type {
   ApiResponse,
+  AuthenticateHotsiteGooglePayload,
   AuthenticateHotsiteUserPayload,
   CreateHotsiteUserPayload,
   HotsiteAuthenticatedUser,
@@ -13,10 +14,35 @@ import type {
   HotsiteOffersResponse,
   HotsitePaymentStatusResponse,
   HotsiteStartCardPaymentPayload,
+  UpdateHotsiteUserPayload,
   ViaCepResponse,
 } from "@/shared/types";
 
 export const checkoutService = {
+  async getSessionStatus(): Promise<{ authenticated: boolean }> {
+    const response = await fetch("/api/auth/session", { cache: "no-store" });
+
+    if (!response.ok) {
+      throw new Error("Não foi possível verificar a sessão.");
+    }
+
+    return (await response.json()) as { authenticated: boolean };
+  },
+
+  async logout(): Promise<void> {
+    const response = await fetch("/api/auth/session", { method: "DELETE" });
+
+    if (!response.ok) {
+      throw new Error("Não foi possível encerrar a sessão.");
+    }
+  },
+
+  getCurrentUser(): Promise<ApiResponse<HotsiteAuthenticatedUser>> {
+    return httpClient.get<HotsiteAuthenticatedUser>("/hotsite/users/me/", {
+      requiresAuth: true,
+    });
+  },
+
   getLanguages(): Promise<ApiResponse<HotsiteLanguagesResponse>> {
     return httpClient.get<HotsiteLanguagesResponse>("/hotsite/languages/");
   },
@@ -57,16 +83,39 @@ export const checkoutService = {
     );
   },
 
+  authenticateWithGoogle(
+    payload: AuthenticateHotsiteGooglePayload
+  ): Promise<ApiResponse<HotsiteAuthenticatedUser>> {
+    return httpClient.post<
+      HotsiteAuthenticatedUser,
+      AuthenticateHotsiteGooglePayload
+    >("/hotsite/auth/google/", payload);
+  },
+
+  updateCurrentUser(
+    payload: UpdateHotsiteUserPayload,
+    token?: string
+  ): Promise<ApiResponse<HotsiteAuthenticatedUser>> {
+    return httpClient.patch<HotsiteAuthenticatedUser, UpdateHotsiteUserPayload>(
+      "/hotsite/users/me/",
+      payload,
+      {
+        requiresAuth: true,
+        tokenProvider: token ? () => token : undefined,
+      }
+    );
+  },
+
   createOrder(
     payload: HotsiteOrderPayload,
-    token: string
+    token?: string
   ): Promise<ApiResponse<HotsiteOrderResponse>> {
     return httpClient.post<HotsiteOrderResponse, HotsiteOrderPayload>(
       "/hotsite/orders/",
       payload,
       {
         requiresAuth: true,
-        tokenProvider: () => token,
+        tokenProvider: token ? () => token : undefined,
       }
     );
   },
@@ -74,14 +123,14 @@ export const checkoutService = {
   startCardPayment(
     orderId: number | string,
     payload: HotsiteStartCardPaymentPayload,
-    token: string
+    token?: string
   ): Promise<ApiResponse<unknown>> {
     return httpClient.post<unknown, HotsiteStartCardPaymentPayload>(
       `/hotsite/orders/${encodeURIComponent(String(orderId))}/start-payment/`,
       payload,
       {
         requiresAuth: true,
-        tokenProvider: () => token,
+        tokenProvider: token ? () => token : undefined,
       }
     );
   },
@@ -92,12 +141,10 @@ export const checkoutService = {
   ): Promise<ApiResponse<HotsitePaymentStatusResponse>> {
     return httpClient.get<HotsitePaymentStatusResponse>(
       `/hotsite/orders/${encodeURIComponent(String(orderId))}/payment-status/`,
-      token
-        ? {
-            requiresAuth: true,
-            tokenProvider: () => token,
-          }
-        : undefined
+      {
+        requiresAuth: true,
+        tokenProvider: token ? () => token : undefined,
+      }
     );
   },
 
