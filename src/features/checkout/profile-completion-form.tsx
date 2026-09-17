@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, MouseEvent, useState } from "react";
 import { CheckCircle2, Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -131,6 +131,24 @@ export function ProfileCompletionForm({
   const [form, setForm] = useState(() => getInitialForm(user));
   const [cepLoading, setCepLoading] = useState(false);
   const [cepError, setCepError] = useState<string | null>(null);
+  const [stage, setStage] = useState<"identity" | "address">("identity");
+
+  const handleContinue = (event: MouseEvent<HTMLButtonElement>) => {
+    if (!event.currentTarget.form?.reportValidity()) {
+      return;
+    }
+
+    if (
+      !form.firstName.trim() ||
+      !form.lastName.trim() ||
+      form.cpf.replace(/\D/g, "").length !== 11 ||
+      getLocalPhone(form.phone).length < 10
+    ) {
+      return;
+    }
+
+    setStage("address");
+  };
 
   const handleCepBlur = async () => {
     const cep = form.cep.replace(/\D/g, "");
@@ -187,10 +205,15 @@ export function ProfileCompletionForm({
     >
       <div>
         <p className="font-heading text-2xl font-semibold text-foreground">
-          Complete seu perfil
+          {stage === "identity" ? "Confirme seus dados" : "Complete seu endereço"}
         </p>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          {description}
+          {stage === "identity"
+            ? description
+            : "Informe o CEP para preenchermos a maior parte do endereço."}
+        </p>
+        <p className="mt-3 text-xs font-semibold text-primary">
+          {stage === "identity" ? "Dados pessoais · 1 de 2" : "Endereço · 2 de 2"}
         </p>
       </div>
 
@@ -207,7 +230,8 @@ export function ProfileCompletionForm({
         </p>
       ) : null}
 
-      <fieldset disabled={submitting} className="grid gap-4 sm:grid-cols-2">
+      {stage === "identity" ? (
+        <fieldset disabled={submitting} className="grid gap-4 sm:grid-cols-2">
         <Field label="Nome">
           <Input
             required
@@ -262,6 +286,16 @@ export function ProfileCompletionForm({
             className="h-11"
           />
         </Field>
+        <Button
+          type="button"
+          className="h-12 rounded-xl sm:col-span-2"
+          onClick={handleContinue}
+        >
+          Continuar para o endereço
+        </Button>
+        </fieldset>
+      ) : (
+        <fieldset disabled={submitting} className="grid gap-4 sm:grid-cols-2">
         <Field label="CEP">
           <div className="relative">
             <Input
@@ -358,16 +392,30 @@ export function ProfileCompletionForm({
             className="h-11"
           />
         </Field>
-      </fieldset>
+        </fieldset>
+      )}
 
-      <Button
-        type="submit"
-        className="h-12 w-full rounded-xl"
-        disabled={submitting || cepLoading}
-      >
-        {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
-        {submitLabel}
-      </Button>
+      {stage === "address" ? (
+        <div className="flex flex-col-reverse gap-3 sm:flex-row">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-12 rounded-xl sm:w-32"
+            disabled={submitting}
+            onClick={() => setStage("identity")}
+          >
+            Voltar
+          </Button>
+          <Button
+            type="submit"
+            className="h-12 flex-1 rounded-xl"
+            disabled={submitting || cepLoading}
+          >
+            {submitting ? <Loader2 className="size-4 animate-spin" /> : null}
+            {submitLabel}
+          </Button>
+        </div>
+      ) : null}
     </form>
   );
 }

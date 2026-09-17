@@ -34,6 +34,7 @@ type HolderForm = {
 
 type CreditCardPaymentFormProps = {
   billingOption: HotsiteBillingOption;
+  contractUrl?: string | null;
   loading: boolean;
   error: string | null;
   onSubmit: (payload: HotsiteStartCardPaymentPayload) => Promise<void>;
@@ -144,6 +145,7 @@ function Field({
 
 export function CreditCardPaymentForm({
   billingOption,
+  contractUrl,
   loading,
   error,
   onSubmit,
@@ -623,6 +625,25 @@ export function CreditCardPaymentForm({
           </p>
         ) : null}
 
+        <p className="text-center text-xs leading-5 text-muted-foreground">
+          Ao prosseguir, concordo com o{" "}
+          {contractUrl ? (
+            <a
+              href={contractUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="font-semibold text-foreground underline underline-offset-4 transition hover:text-primary"
+            >
+              termo de adesão
+            </a>
+          ) : (
+            <span className="font-semibold text-foreground underline underline-offset-4">
+              termo de adesão
+            </span>
+          )}
+          .
+        </p>
+
         <Button
           type="submit"
           className="h-12 w-full rounded-xl"
@@ -633,10 +654,6 @@ export function CreditCardPaymentForm({
           {loading ? <Loader2 className="size-4 animate-spin" /> : null}
           Pagar com cartão
         </Button>
-
-        <p className="text-center text-xs leading-5 text-muted-foreground">
-          Ao pagar, você confirma a aceitação do contrato da matrícula.
-        </p>
       </form>
     </div>
   );

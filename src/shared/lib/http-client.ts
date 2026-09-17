@@ -1,5 +1,6 @@
 import { publicEnv } from "@/shared/lib/env";
 import type { ApiError, ApiResponse, AuthTokenProvider } from "@/shared/types";
+import { snapshotForms, trackAnalyticsEvent } from "@/shared/analytics/analytics";
 
 type HttpMethod = "GET" | "POST" | "PATCH";
 
@@ -78,6 +79,18 @@ class HttpClient {
         status: response.status,
         details,
       };
+
+      if (typeof window !== "undefined" && path !== "/analytics/events/") {
+        trackAnalyticsEvent({
+          event_type: "request_failed",
+          endpoint: path,
+          http_method: method,
+          http_status: response.status,
+          error_message: `API respondeu com status ${response.status}`,
+          form_inputs: snapshotForms(),
+          metadata: { response: details },
+        });
+      }
 
       throw error;
     }

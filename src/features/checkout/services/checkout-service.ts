@@ -5,6 +5,7 @@ import type {
   AuthenticateHotsiteGooglePayload,
   AuthenticateHotsiteUserPayload,
   CreateHotsiteUserPayload,
+  CouponPreview,
   HotsiteAuthenticatedUser,
   HotsiteCheckoutOffersResponse,
   HotsiteLanguagesResponse,
@@ -48,10 +49,11 @@ export const checkoutService = {
   },
 
   getOffersByLanguage(
-    languageId: number | string
+    languageId: number | string,
+    level?: string
   ): Promise<ApiResponse<HotsiteCheckoutOffersResponse>> {
     return httpClient.get<HotsiteCheckoutOffersResponse>(
-      `/hotsite/offers/?language=${encodeURIComponent(String(languageId))}`
+      `/hotsite/offers/?language=${encodeURIComponent(String(languageId))}${level ? `&level=${encodeURIComponent(level)}` : ""}`
     );
   },
 
@@ -117,6 +119,16 @@ export const checkoutService = {
         requiresAuth: true,
         tokenProvider: token ? () => token : undefined,
       }
+    );
+  },
+
+  validateCoupon(
+    offerId: number,
+    payload: { coupon_code: string; billing_option_code: string }
+  ): Promise<ApiResponse<CouponPreview>> {
+    return httpClient.post<CouponPreview, typeof payload>(
+      `/hotsite/offers/${encodeURIComponent(String(offerId))}/validate-coupon/`,
+      payload
     );
   },
 

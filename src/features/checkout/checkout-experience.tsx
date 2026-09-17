@@ -1,21 +1,29 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  MouseEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Copy,
   CreditCard,
   Eye,
   EyeOff,
-  ExternalLink,
   Loader2,
   Moon,
   ReceiptText,
+  Tag,
   ShieldCheck,
   Sun,
   Sunrise,
@@ -49,6 +57,7 @@ import {
 } from "@/shared/lib/checkout-cart";
 import type {
   ApiError,
+  CouponPreview,
   HotsiteAuthenticatedUser,
   HotsiteBillingOption,
   HotsiteCheckoutLanguage,
@@ -60,6 +69,7 @@ import type {
   HotsiteStartCardPaymentPayload,
   UpdateHotsiteUserPayload,
 } from "@/shared/types";
+import { trackAnalyticsEvent } from "@/shared/analytics/analytics";
 
 type CheckoutStep = "language" | "offer" | "selection" | "account" | "payment";
 type ClassChoiceMode = "class" | "period";
@@ -165,13 +175,17 @@ const periodOptions: Array<{
   },
 ];
 
-const checkoutSteps: Array<{ value: CheckoutStep; label: string }> = [
-  { value: "language", label: "Idioma" },
-  { value: "offer", label: "Oferta" },
-  { value: "selection", label: "Turma" },
-  { value: "account", label: "Conta" },
-  { value: "payment", label: "Pagamento" },
+const checkoutJourney = [
+  { label: "Seu curso", description: "Idioma e plano" },
+  { label: "Seu horário", description: "Turma e valor" },
+  { label: "Finalizar", description: "Identificação" },
 ];
+
+function getJourneyStep(step: CheckoutStep) {
+  if (step === "language" || step === "offer") return 0;
+  if (step === "selection") return 1;
+  return 2;
+}
 
 function formatCpf(value: string) {
   return value
@@ -520,6 +534,8 @@ export function CheckoutExperience({
   onOpenChange,
 }: CheckoutExperienceProps) {
   const [step, setStep] = useState<CheckoutStep>("language");
+  const placementSelection = useRef<{ languageId: number; level: string; applied: boolean } | null>(null);
+  const [placementNotice, setPlacementNotice] = useState<string | null>(null);
   const [languages, setLanguages] = useState<HotsiteCheckoutLanguage[]>([]);
   const [offers, setOffers] = useState<HotsiteCheckoutOffer[]>([]);
   const [selectedLanguage, setSelectedLanguage] =
@@ -582,11 +598,20 @@ export function CheckoutExperience({
   const [cardPaymentLoading, setCardPaymentLoading] = useState(false);
   const [cepLoading, setCepLoading] = useState(false);
   const [copyFeedback, setCopyFeedback] = useState(false);
+  const [pixContractAccepted, setPixContractAccepted] = useState(false);
   const [languagesError, setLanguagesError] = useState<string | null>(null);
   const [offersError, setOffersError] = useState<string | null>(null);
   const [offerDetailError, setOfferDetailError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [couponCode, setCouponCode] = useState("");
+  const [couponPreview, setCouponPreview] = useState<CouponPreview | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [showCoupon, setShowCoupon] = useState(false);
+  const [registerStage, setRegisterStage] = useState<"identity" | "address">(
+    "identity"
+  );
   const [languagesReloadKey, setLanguagesReloadKey] = useState(0);
   const [offersReloadKey, setOffersReloadKey] = useState(0);
   const [offerDetailReloadKey, setOfferDetailReloadKey] = useState(0);
@@ -624,6 +649,10 @@ export function CheckoutExperience({
       ) ?? null,
     [offerDetail, selectedBillingCode]
   );
+  const activeCouponPreview =
+    couponPreview?.billing_option_code === selectedBillingCode
+      ? couponPreview
+      : null;
   const isSelectedCreditCard = isCreditCardOption(selectedBilling);
   const activeBillingOptions = useMemo(
     () => offerDetail?.billing_options.filter((option) => option.is_active) ?? [],
@@ -652,37 +681,75 @@ export function CheckoutExperience({
       ) ?? null,
     [offerDetail, selectedClassId]
   );
+
   const canContinueToAccount =
     Boolean(selectedBilling) &&
     (classChoiceMode === "class" ? Boolean(selectedClassId) : Boolean(selectedPeriod));
   const title = useMemo(() => {
     if (step === "language") {
-      return "Escolha o idioma";
+      return "Vamos montar sua matrícula";
     }
 
     if (step === "offer") {
-      return "Escolha a oferta";
+      return "Escolha seu curso";
     }
 
     if (step === "selection") {
-      return "Turma e pagamento";
+      return "Qual horário funciona melhor?";
     }
 
     if (step === "account") {
-      return googleProfileUser ? "Complete seu perfil" : "Entrar ou criar conta";
+      return googleProfileUser ? "Só mais alguns dados" : "Finalize sua matrícula";
     }
 
-    return isSelectedCreditCard ? "Pagamento com cartão" : "Pagamento PIX";
-  }, [googleProfileUser, isSelectedCreditCard, step]);
-  const currentStepIndex = checkoutSteps.findIndex(
-    (checkoutStep) => checkoutStep.value === step
-  );
+    if (isPaidStatus(paymentStatus)) {
+      return "Matrícula confirmada";
+    }
+
+    return isSelectedCreditCard ? "Pague com segurança" : "Conclua com PIX";
+  }, [googleProfileUser, isSelectedCreditCard, paymentStatus, step]);
+  const currentJourneyStep = getJourneyStep(step);
+
+  useEffect(() => {
+    if (mode === "page" || open) {
+      trackAnalyticsEvent({
+        event_type: "checkout_step_viewed",
+        metadata: {
+          step,
+          offer_id: selectedOfferSummary?.id,
+          offer_name: selectedOfferSummary ? getCourseName(selectedOfferSummary) : undefined,
+        },
+      });
+    }
+  }, [mode, open, selectedOfferSummary, step]);
+
+  useEffect(() => {
+    if (isPaidStatus(paymentStatus)) {
+      trackAnalyticsEvent({
+        event_type: "checkout_completed",
+        metadata: {
+          order_id: orderResponse?.order_id,
+          offer_id: selectedOfferSummary?.id,
+          offer_name: selectedOfferSummary ? getCourseName(selectedOfferSummary) : undefined,
+        },
+      });
+    }
+  }, [orderResponse?.order_id, paymentStatus, selectedOfferSummary]);
 
   useEffect(() => {
     let cancelled = false;
 
     async function restoreCart() {
       await Promise.resolve();
+      if (mode === "page") {
+        const params = new URLSearchParams(window.location.search);
+        const languageId = Number(params.get("language"));
+        const level = params.get("level")?.toUpperCase() ?? "";
+        if (Number.isSafeInteger(languageId) && languageId > 0 && /^[ABC][12]$/.test(level)) {
+          placementSelection.current = { languageId, level, applied: false };
+          return;
+        }
+      }
       const storedItem = readCheckoutCart();
 
       let intent: "continue" | "login" | null = null;
@@ -755,7 +822,7 @@ export function CheckoutExperience({
       cancelled = true;
       window.removeEventListener(checkoutCartActionEvent, handleCartAction);
     };
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -797,6 +864,17 @@ export function CheckoutExperience({
 
         if (!cancelled) {
           setLanguages(response.data.results);
+          const placement = placementSelection.current;
+          if (placement && !placement.applied) {
+            const language = response.data.results.find((item) => item.id === placement.languageId);
+            if (language) {
+              setSelectedLanguage(language);
+              setStep("offer");
+            } else {
+              placement.applied = true;
+              setPlacementNotice("Não há turmas disponíveis para o idioma do seu teste no momento.");
+            }
+          }
         }
       } catch (error) {
         if (!cancelled) {
@@ -829,10 +907,31 @@ export function CheckoutExperience({
       setOffersError(null);
 
       try {
-        const response = await checkoutService.getOffersByLanguage(languageId);
+        const placement = placementSelection.current;
+        const shouldApply = placement && !placement.applied && placement.languageId === languageId;
+        const response = await checkoutService.getOffersByLanguage(languageId, shouldApply ? placement.level : undefined);
 
         if (!cancelled) {
           setOffers(response.data.results);
+          if (shouldApply) {
+            placement.applied = true;
+            const offer = response.data.results.find((item) =>
+              item.course.language.id === languageId && item.course.level.level.trim().toUpperCase() === placement.level
+            );
+            if (offer) {
+              try {
+                saveCheckoutCart({ version: 1, language: selectedLanguage!, offer, savedAt: new Date().toISOString() });
+              } catch {
+                setFormError("A turma foi selecionada, mas não pôde ser salva neste navegador.");
+              }
+              setSelectedOfferSummary(offer);
+              setClassChoiceMode("class");
+              setStep("selection");
+              trackAnalyticsEvent({ event_type: "offer_viewed", metadata: { offer_id: offer.id, origin: "placement_test", level: placement.level } });
+            } else {
+              setPlacementNotice(`Não há turmas disponíveis para o nível ${placement.level} no momento.`);
+            }
+          }
         }
       } catch (error) {
         if (!cancelled) {
@@ -887,7 +986,12 @@ export function CheckoutExperience({
             null;
 
           setOfferDetail(response.data);
-          setSelectedClassId(response.data.student_classes[0]?.id ?? null);
+          const matchingClass = response.data.student_classes.find((item) =>
+            selectedOfferSummary?.student_class_id
+              ? item.id === selectedOfferSummary.student_class_id
+              : item.course.id === selectedOfferSummary?.course.id
+          );
+          setSelectedClassId(matchingClass?.id ?? null);
           setPaymentBillingType(defaultBillingType);
           setSelectedBillingCode(defaultBillingOption?.code ?? null);
         }
@@ -984,6 +1088,8 @@ export function CheckoutExperience({
     setShowLoginPassword(false);
     setShowRegisterPassword(false);
     setShowConfirmPassword(false);
+    setShowCoupon(false);
+    setRegisterStage("identity");
     setRegisterEmailTouched(false);
     setConfirmPasswordTouched(false);
     setAuthToken(null);
@@ -993,6 +1099,7 @@ export function CheckoutExperience({
     setPaymentStatus(null);
     setCardPaymentSubmitted(false);
     setCardPaymentLoading(false);
+    setPixContractAccepted(false);
     setFormError(null);
     setPaymentError(null);
     setOffersError(null);
@@ -1008,6 +1115,8 @@ export function CheckoutExperience({
   };
 
   const handleLanguageSelect = (language: HotsiteCheckoutLanguage) => {
+    placementSelection.current = null;
+    setPlacementNotice(null);
     setSelectedLanguage(language);
     setSelectedOfferSummary(null);
     setOfferDetail(null);
@@ -1040,6 +1149,10 @@ export function CheckoutExperience({
   };
 
   const handleOfferSelect = (offer: HotsiteCheckoutOffer) => {
+    trackAnalyticsEvent({
+      event_type: "offer_viewed",
+      metadata: { offer_id: offer.id, offer_name: getCourseName(offer) },
+    });
     saveOfferToCart(offer);
     setSelectedOfferSummary(offer);
     setOfferDetail(null);
@@ -1061,6 +1174,9 @@ export function CheckoutExperience({
     const payload: HotsiteOrderPayload = {
       offer_id: offerDetail.id,
       billing_option_code: selectedBilling.code,
+      ...(activeCouponPreview?.coupon_code
+        ? { coupon_code: activeCouponPreview.coupon_code }
+        : {}),
     };
 
     if (classChoiceMode === "class" && selectedClassId) {
@@ -1080,6 +1196,28 @@ export function CheckoutExperience({
     }
 
     return payload;
+  };
+
+  const handleApplyCoupon = async () => {
+    if (!offerDetail || !selectedBilling || !couponCode.trim()) {
+      setCouponError("Informe um cupom e selecione a forma de pagamento.");
+      return;
+    }
+    setCouponLoading(true);
+    setCouponError(null);
+    try {
+      const response = await checkoutService.validateCoupon(offerDetail.id, {
+        coupon_code: couponCode.trim().toUpperCase(),
+        billing_option_code: selectedBilling.code,
+      });
+      setCouponPreview(response.data);
+      setCouponCode(response.data.coupon_code);
+    } catch (error) {
+      setCouponPreview(null);
+      setCouponError(getApiErrorMessage(error));
+    } finally {
+      setCouponLoading(false);
+    }
   };
 
   const handleContinueToAccount = () => {
@@ -1128,6 +1266,7 @@ export function CheckoutExperience({
     setPaymentStatus(null);
     setPaymentError(null);
     setCardPaymentSubmitted(false);
+    setPixContractAccepted(false);
     setStep("payment");
   };
 
@@ -1191,6 +1330,44 @@ export function CheckoutExperience({
     } finally {
       setAuthLoading(false);
     }
+  };
+
+  const handleContinueRegistration = (event: MouseEvent<HTMLButtonElement>) => {
+    if (!event.currentTarget.form?.reportValidity()) {
+      return;
+    }
+
+    setRegisterEmailTouched(true);
+    setConfirmPasswordTouched(true);
+    setFormError(null);
+
+    if (
+      !registerForm.firstName.trim() ||
+      !registerForm.lastName.trim() ||
+      registerForm.cpf.replace(/\D/g, "").length !== 11 ||
+      registerForm.phone.replace(/\D/g, "").length < 10
+    ) {
+      setFormError("Preencha seus dados pessoais para continuar.");
+      return;
+    }
+
+    if (!isValidEmail(registerForm.email)) {
+      setFormError("Informe um e-mail válido.");
+      return;
+    }
+
+    if (registerForm.password.length < 8) {
+      setFormError("Crie uma senha com pelo menos 8 caracteres.");
+      return;
+    }
+
+    if (registerForm.password !== registerForm.confirmPassword) {
+      setFormError("As senhas não coincidem.");
+      return;
+    }
+
+    setRegisterStage("address");
+    window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: "smooth" }));
   };
 
   const handleRegister = async (event: FormEvent<HTMLFormElement>) => {
@@ -1345,41 +1522,112 @@ export function CheckoutExperience({
   };
 
   const renderSelectionSummary = () => (
-    <aside className="space-y-4 rounded-[1.4rem] border border-border bg-white p-5 shadow-sm">
-      <div className="rounded-[1.1rem] bg-[#101b24] p-5 text-white">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary">
-          Resumo do pedido
+    <aside className="space-y-5 rounded-2xl border border-[#dce4ee] bg-white p-5 shadow-[0_18px_50px_rgba(23,43,77,0.08)] lg:sticky lg:top-6 lg:self-start">
+      <div className="border-b border-border pb-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+          Sua matrícula
         </p>
-        <p className="mt-3 font-heading text-3xl font-semibold">
-          {formatPrice(selectedBilling?.price ?? offerDetail?.price)}
+        <p className="mt-2 text-sm font-semibold text-foreground">
+          {getCourseName(offerDetail)}
         </p>
-        <p className="mt-2 text-sm text-white/70">{getCourseName(offerDetail)}</p>
+        {activeCouponPreview ? (
+          <p className="mt-4 text-sm text-muted-foreground line-through">
+            {formatPrice(activeCouponPreview.amount_original)}
+          </p>
+        ) : null}
+        <p className={`${activeCouponPreview ? "mt-0.5" : "mt-4"} text-3xl font-semibold tracking-[-0.04em] text-foreground`}>
+          {formatPrice(
+            activeCouponPreview?.amount_total ??
+              selectedBilling?.price ??
+              offerDetail?.price
+          )}
+        </p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          {selectedBilling
+            ? getBillingDescription(selectedBilling)
+            : "Escolha como prefere pagar"}
+        </p>
+        {activeCouponPreview ? (
+          <p className="mt-2 text-xs font-semibold text-emerald-700">
+            Cupom {activeCouponPreview.coupon_code} aplicado · economia de{" "}
+            {formatPrice(activeCouponPreview.discount_amount)}
+          </p>
+        ) : null}
       </div>
 
-      <div className="rounded-[1rem] border border-border bg-muted/30 p-4">
-        <p className="text-sm text-muted-foreground">
+      <div className="space-y-4 text-sm">
+        <div>
+          <p className="text-muted-foreground">
           {classChoiceMode === "class" ? "Turma escolhida" : "Turno escolhido"}
-        </p>
-        <p className="mt-1 font-semibold text-foreground">
-          {classChoiceMode === "class"
-            ? selectedClass
-              ? `${selectedClass.course.name} - ${formatTime(selectedClass.time)}`
-              : "Selecione uma turma"
-            : periodOptions.find((period) => period.value === selectedPeriod)
-                ?.label ?? "Selecione um turno"}
-        </p>
+          </p>
+          <p className="mt-1 font-semibold text-foreground">
+            {classChoiceMode === "class"
+              ? selectedClass
+                ? `${formatDays(selectedClass.days_of_week)} · ${formatTime(selectedClass.time)}`
+                : "Selecione uma turma"
+              : periodOptions.find((period) => period.value === selectedPeriod)
+                  ?.label ?? "Selecione um turno"}
+          </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Forma de pagamento</p>
+          <p className="mt-1 font-semibold text-foreground">
+            {selectedBilling
+              ? getBillingLabel(selectedBilling)
+              : "Selecione uma opção"}
+          </p>
+        </div>
       </div>
 
-      <div className="rounded-[1rem] border border-border bg-muted/30 p-4">
-        <p className="text-sm text-muted-foreground">Forma de pagamento</p>
-        <p className="mt-1 font-semibold text-foreground">
-          {selectedBilling ? getBillingLabel(selectedBilling) : "Selecione uma opção"}
-        </p>
+      <div className="border-t border-border pt-4">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 text-left text-sm font-semibold text-foreground"
+          aria-expanded={showCoupon}
+          onClick={() => setShowCoupon((current) => !current)}
+        >
+          <span className="flex items-center gap-2">
+            <Tag className="size-4 text-primary" />
+            Tenho um cupom
+          </span>
+          <ChevronDown
+            className={`size-4 text-muted-foreground transition ${showCoupon ? "rotate-180" : ""}`}
+          />
+        </button>
+        {showCoupon ? (
+          <div className="mt-3 animate-in fade-in slide-in-from-top-1 duration-200">
+            <div className="flex gap-2">
+              <Input
+                id="checkout-coupon"
+                aria-label="Código do cupom"
+                value={couponCode}
+                onChange={(event) => {
+                  setCouponCode(event.target.value.toUpperCase());
+                  setCouponPreview(null);
+                  setCouponError(null);
+                }}
+                placeholder="CÓDIGO"
+                className="font-mono uppercase"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                disabled={couponLoading || !selectedBilling}
+                onClick={handleApplyCoupon}
+              >
+                {couponLoading ? <Loader2 className="size-4 animate-spin" /> : "Aplicar"}
+              </Button>
+            </div>
+            {couponError ? (
+              <p className="mt-2 text-xs text-destructive">{couponError}</p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <Button
         type="button"
-        className="h-12 w-full rounded-xl"
+        className="h-12 w-full rounded-xl shadow-[0_10px_24px_rgba(0,100,224,0.2)]"
         disabled={!canContinueToAccount || authLoading}
         onClick={handleContinueToAccount}
       >
@@ -1388,13 +1636,13 @@ export function CheckoutExperience({
         ) : (
           <CreditCard className="size-4" />
         )}
-        Seguir para pagamento
+        {hasAuthenticatedSession ? "Criar pedido" : "Continuar"}
         <ArrowRight className="size-4" />
       </Button>
 
-      <p className="text-xs leading-5 text-muted-foreground">
-        O botão será habilitado após escolher turma ou turno e uma forma de
-        pagamento.
+      <p className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+        <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-primary" />
+        Seus dados e seu pagamento são protegidos durante todo o processo.
       </p>
 
       {formError ? (
@@ -1420,7 +1668,7 @@ export function CheckoutExperience({
   const renderBillingOptions = (options: HotsiteBillingOption[], titleText: string) =>
     options.length > 0 ? (
       <div className="space-y-3">
-        <h3 className="font-heading text-xl font-semibold tracking-[-0.02em]">
+        <h3 className="text-lg font-semibold tracking-[-0.02em]">
           {titleText}
         </h3>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1432,7 +1680,7 @@ export function CheckoutExperience({
                 key={option.id}
                 type="button"
                 onClick={() => setSelectedBillingCode(option.code)}
-                className={`rounded-[1.1rem] border p-4 text-left transition ${
+                className={`rounded-xl border p-4 text-left transition ${
                   selected
                     ? "border-primary bg-accent shadow-sm"
                     : "border-border bg-white hover:border-primary/50"
@@ -1451,7 +1699,7 @@ export function CheckoutExperience({
                     <CheckCircle2 className="size-5 text-primary" />
                   ) : null}
                 </div>
-                <p className="mt-4 font-heading text-2xl font-semibold text-foreground">
+                <p className="mt-4 text-2xl font-semibold tracking-[-0.03em] text-foreground">
                   {formatPrice(option.price)}
                 </p>
               </button>
@@ -1462,42 +1710,59 @@ export function CheckoutExperience({
     ) : null;
 
   const content = (
-    <div className={mode === "page" ? "page-shell py-10 md:py-16" : undefined}>
+    <div
+      className={
+        mode === "page"
+          ? "mx-auto w-full max-w-[1240px] px-4 py-8 sm:px-6 sm:py-10 lg:px-8 lg:py-14"
+          : undefined
+      }
+    >
       <section
         className={
           mode === "page"
-            ? "mx-auto max-w-6xl rounded-[2rem] border border-border bg-white p-6 shadow-sm sm:p-8"
+            ? "mx-auto max-w-6xl"
             : "bg-white"
         }
       >
-        <div className="border-b border-border pb-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              {/* <p className="text-sm font-semibold uppercase tracking-[0.22em] text-primary">
-                Checkout Veli
-              </p> */}
-              <h1 className="mt-2 font-heading text-3xl font-semibold tracking-[-0.03em] text-foreground md:text-4xl">
+        <div className="mb-8 grid gap-7 lg:grid-cols-[1fr_560px] lg:items-end">
+          <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
+                Matrícula Veli
+              </p>
+              <h1 className="mt-3 max-w-2xl font-heading text-3xl font-semibold tracking-[-0.04em] text-foreground sm:text-4xl lg:text-[2.65rem] lg:leading-[1.08]">
                 {title}
               </h1>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                Etapa {currentJourneyStep + 1} de {checkoutJourney.length}
+              </p>
+          </div>
+
+          <div>
+            <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-[#e3eaf3] sm:hidden">
+              <span
+                className="block h-full rounded-full bg-primary transition-[width] duration-500 ease-out"
+                style={{
+                  width: `${((currentJourneyStep + 1) / checkoutJourney.length) * 100}%`,
+                }}
+              />
             </div>
-            <div className="w-full max-w-xl">
-              <div className="grid grid-cols-5 items-start gap-1 rounded-[1.25rem] border border-border bg-muted/30 p-2 sm:gap-2">
-                {checkoutSteps.map((checkoutStep, index) => {
-                  const isActive = checkoutStep.value === step;
-                  const isComplete = index < currentStepIndex;
+            <div className="hidden grid-cols-3 gap-3 sm:grid" role="list" aria-label="Progresso da matrícula">
+                {checkoutJourney.map((journeyStep, index) => {
+                  const isActive = index === currentJourneyStep;
+                  const isComplete = index < currentJourneyStep;
 
                   return (
-                    <div key={checkoutStep.value} className="relative min-w-0">
-                      {index < checkoutSteps.length - 1 ? (
+                    <div
+                      key={journeyStep.label}
+                      role="listitem"
+                      className={`flex items-center gap-3 rounded-xl border px-3 py-3 transition-colors ${
+                        isActive
+                          ? "border-primary/30 bg-primary/[0.055]"
+                          : "border-transparent"
+                      }`}
+                    >
                         <span
-                          className={`absolute left-[calc(50%+1rem)] right-[calc(-50%+1rem)] top-4 h-px ${
-                            isComplete ? "bg-primary" : "bg-border"
-                          }`}
-                        />
-                      ) : null}
-                      <div className="relative z-10 flex flex-col items-center gap-2">
-                        <span
-                          className={`flex size-8 items-center justify-center rounded-full border text-xs font-bold transition ${
+                          className={`flex size-8 shrink-0 items-center justify-center rounded-full border text-xs font-bold transition ${
                             isActive
                               ? "border-primary bg-primary text-primary-foreground shadow-sm"
                               : isComplete
@@ -1511,32 +1776,28 @@ export function CheckoutExperience({
                             index + 1
                           )}
                         </span>
-                        <span
-                          className={`truncate text-[0.68rem] font-semibold sm:text-xs ${
-                            isActive
-                              ? "text-foreground"
-                              : isComplete
-                                ? "text-primary"
-                                : "text-muted-foreground"
-                          }`}
-                        >
-                          {checkoutStep.label}
+                        <span className="min-w-0">
+                          <span className={`block truncate text-xs font-semibold ${isActive ? "text-foreground" : "text-muted-foreground"}`}>
+                            {journeyStep.label}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[0.68rem] text-muted-foreground">
+                            {journeyStep.description}
+                          </span>
                         </span>
-                      </div>
                     </div>
                   );
                 })}
-              </div>
             </div>
           </div>
         </div>
 
-        <div className="pt-6">
+        <div className="rounded-2xl border border-[#dce4ee] bg-white p-5 shadow-[0_24px_70px_rgba(24,45,78,0.08)] sm:p-7 lg:p-8">
+          {placementNotice ? <p role="status" className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">{placementNotice}</p> : null}
           {step === "language" ? (
             <div className="space-y-6">
               <p className="max-w-2xl text-base leading-7 text-muted-foreground">
-                Selecione o idioma desejado para buscarmos as ofertas
-                disponíveis.
+                Qual idioma você quer aprender? Depois mostramos os cursos e
+                horários disponíveis para você.
               </p>
 
               {languagesLoading ? <CheckoutLoading /> : null}
@@ -1556,7 +1817,7 @@ export function CheckoutExperience({
                         key={language.id}
                         type="button"
                         onClick={() => handleLanguageSelect(language)}
-                        className="group flex min-h-28 items-center gap-4 rounded-[1.3rem] border border-border bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-primary hover:bg-accent hover:shadow-sm"
+                        className="group flex min-h-24 items-center gap-4 rounded-2xl border border-border bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-primary/[0.035] hover:shadow-sm active:translate-y-0"
                       >
                         <Image
                           src={language.image}
@@ -1566,19 +1827,20 @@ export function CheckoutExperience({
                           className="size-16 rounded-full border border-border object-cover"
                         />
                         <div>
-                          <p className="font-heading text-2xl font-semibold tracking-[-0.03em] text-foreground">
+                          <p className="text-lg font-semibold tracking-[-0.02em] text-foreground">
                             {language.name}
                           </p>
                           <p className="mt-1 text-sm text-muted-foreground">
-                            Ver ofertas disponíveis
+                            Ver cursos disponíveis
                           </p>
                         </div>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-[1.4rem] border border-dashed border-border bg-muted/40 p-5 text-sm leading-6 text-muted-foreground">
-                    Nenhum idioma foi retornado em <code>results</code>.
+                  <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-5 text-sm leading-6 text-muted-foreground">
+                    Não encontramos idiomas disponíveis agora. Tente novamente
+                    em alguns instantes ou fale com nosso suporte.
                   </div>
                 )
               ) : null}
@@ -1637,7 +1899,7 @@ export function CheckoutExperience({
                         key={offer.id}
                         type="button"
                         onClick={() => handleOfferSelect(offer)}
-                        className="rounded-[1.4rem] border border-border bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-primary hover:bg-accent hover:shadow-sm"
+                        className="rounded-2xl border border-border bg-white p-5 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-primary/[0.025] hover:shadow-sm active:translate-y-0"
                       >
                         <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
                           <div className="flex gap-4">
@@ -1665,7 +1927,7 @@ export function CheckoutExperience({
 
                           <div className="shrink-0 rounded-[1.1rem] bg-muted px-4 py-3 md:text-right">
                             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                              Valor
+                              A partir de
                             </p>
                             <p className="mt-1 font-heading text-2xl font-semibold text-foreground">
                               {formatPrice(offer.price)}
@@ -1695,7 +1957,8 @@ export function CheckoutExperience({
                   </div>
                 ) : (
                   <div className="rounded-[1.4rem] border border-dashed border-border bg-muted/40 p-5 text-sm leading-6 text-muted-foreground">
-                    Nenhuma oferta foi retornada para {selectedLanguage.name}.
+                    Não encontramos cursos de {selectedLanguage.name} disponíveis
+                    agora. Tente novamente em alguns instantes.
                   </div>
                 )
               ) : null}
@@ -1726,10 +1989,10 @@ export function CheckoutExperience({
               ) : null}
 
               {!offerDetailLoading && !offerDetailError && offerDetail ? (
-                <div className="grid gap-6 lg:grid-cols-[1fr_360px]">
-                  <div className="space-y-8 rounded-[1.4rem] border border-border bg-white p-5 shadow-sm">
+                <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
+                  <div className="space-y-9">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <h2 className="font-heading text-2xl font-semibold tracking-[-0.03em] text-foreground">
+                      <h2 className="text-xl font-semibold tracking-[-0.025em] text-foreground">
                         {classChoiceMode === "class"
                           ? "Escolha a turma"
                           : "Escolha o turno"}
@@ -1763,7 +2026,7 @@ export function CheckoutExperience({
                               key={studentClass.id}
                               type="button"
                               onClick={() => setSelectedClassId(studentClass.id)}
-                              className={`rounded-[1.1rem] border p-4 text-left transition ${
+                              className={`rounded-xl border p-4 text-left transition ${
                                 selectedClassId === studentClass.id
                                   ? "border-primary bg-accent shadow-sm"
                                   : "border-border bg-white hover:border-primary/50"
@@ -1806,7 +2069,7 @@ export function CheckoutExperience({
                               key={period.value}
                               type="button"
                               onClick={() => setSelectedPeriod(period.value)}
-                              className={`rounded-[1.1rem] border p-4 text-left transition ${
+                              className={`rounded-xl border p-4 text-left transition ${
                                 selectedPeriod === period.value
                                   ? "border-primary bg-accent shadow-sm"
                                   : "border-border bg-white hover:border-primary/50"
@@ -1907,12 +2170,13 @@ export function CheckoutExperience({
                   disabled={authLoading}
                   onClick={() => {
                     setAuthMode("login");
+                    setRegisterStage("identity");
                     setShowLoginPassword(false);
                     setFormError(null);
                   }}
                 >
                   <UserRound className="size-4" />
-                  Fazer login
+                  Já tenho conta
                 </Button>
                 <Button
                   type="button"
@@ -1921,12 +2185,13 @@ export function CheckoutExperience({
                   disabled={authLoading}
                   onClick={() => {
                     setAuthMode("register");
+                    setRegisterStage("identity");
                     setShowLoginPassword(false);
                     setFormError(null);
                   }}
                 >
                   <ShieldCheck className="size-4" />
-                  Criar uma conta
+                  Sou novo por aqui
                 </Button>
               </div>
 
@@ -2022,8 +2287,28 @@ export function CheckoutExperience({
               ) : (
                 <form
                   onSubmit={handleRegister}
-                  className="space-y-5 rounded-[1.4rem] border border-border bg-white p-5 shadow-sm"
+                  className="space-y-6 rounded-2xl border border-border bg-white p-5 shadow-sm sm:p-6"
                 >
+                  <div className="flex items-start justify-between gap-4 border-b border-border pb-5">
+                    <div>
+                      <p className="text-lg font-semibold text-foreground">
+                        {registerStage === "identity"
+                          ? "Primeiro, seus dados"
+                          : "Agora, seu endereço"}
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                        {registerStage === "identity"
+                          ? "Usaremos essas informações para identificar sua matrícula."
+                          : "O CEP preenche a maior parte do endereço automaticamente."}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-primary/8 px-3 py-1 text-xs font-semibold text-primary">
+                      {registerStage === "identity" ? "1 de 2" : "2 de 2"}
+                    </span>
+                  </div>
+
+                  {registerStage === "identity" ? (
+                    <>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="Nome">
                       <Input
@@ -2287,6 +2572,19 @@ export function CheckoutExperience({
                         ) : null}
                       </div>
                     </Field>
+                  </div>
+                  <Button
+                    type="button"
+                    className="h-12 w-full rounded-xl"
+                    onClick={handleContinueRegistration}
+                  >
+                    Continuar para o endereço
+                    <ArrowRight className="size-4" />
+                  </Button>
+                    </>
+                  ) : (
+                    <>
+                  <div className="grid gap-4 sm:grid-cols-2">
                     <Field label="CEP">
                       <div className="relative">
                         <Input
@@ -2391,18 +2689,35 @@ export function CheckoutExperience({
                       />
                     </Field>
                   </div>
-                  <Button
-                    type="submit"
-                    className="h-12 w-full rounded-xl"
-                    disabled={authLoading}
-                  >
-                    {authLoading ? (
-                      <Loader2 className="size-4 animate-spin" />
-                    ) : null}
-                    {authOrigin === "cart"
-                      ? "Criar conta e continuar"
-                      : "Criar conta e pedido"}
-                  </Button>
+                  <div className="flex flex-col-reverse gap-3 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-12 rounded-xl sm:w-36"
+                      disabled={authLoading}
+                      onClick={() => {
+                        setFormError(null);
+                        setRegisterStage("identity");
+                      }}
+                    >
+                      <ArrowLeft className="size-4" />
+                      Voltar
+                    </Button>
+                    <Button
+                      type="submit"
+                      className="h-12 flex-1 rounded-xl"
+                      disabled={authLoading || cepLoading}
+                    >
+                      {authLoading ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : null}
+                      {authOrigin === "cart"
+                        ? "Criar conta e continuar"
+                        : "Criar conta e ir ao pagamento"}
+                    </Button>
+                  </div>
+                    </>
+                  )}
                 </form>
               )}
                 </>
@@ -2416,11 +2731,11 @@ export function CheckoutExperience({
                 <div className="rounded-[1.5rem] border border-[#147b29]/20 bg-[#147b29]/5 p-6 text-center">
                   <CheckCircle2 className="mx-auto size-14 text-[#147b29]" />
                   <h2 className="mt-4 font-heading text-3xl font-semibold tracking-[-0.03em] text-foreground">
-                    Pagamento feito com sucesso
+                    Sua matrícula está confirmada
                   </h2>
                   <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-                    As instruções de login serão encaminhadas no email e
-                    entraremos em contato.
+                    Enviamos os detalhes da matrícula por e-mail. Você já pode
+                    acessar a área do aluno para acompanhar os próximos passos.
                   </p>
                   <div className="mt-5 flex flex-col items-center justify-center gap-3 sm:flex-row">
                     {paymentStatus?.latest_charge?.payment_receipt_url ? (
@@ -2439,7 +2754,7 @@ export function CheckoutExperience({
                       className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/80"
                     >
                       <UserRound className="size-4" />
-                      Fazer login
+                      Acessar área do aluno
                     </a>
                   </div>
                 </div>
@@ -2487,6 +2802,7 @@ export function CheckoutExperience({
                 <CreditCardPaymentForm
                   key={selectedBilling.code}
                   billingOption={selectedBilling}
+                  contractUrl={orderResponse.contract?.contract_file_url}
                   loading={cardPaymentLoading}
                   error={paymentError}
                   onSubmit={handleStartCardPayment}
@@ -2506,6 +2822,41 @@ export function CheckoutExperience({
                       {paymentError}
                     </p>
                   ) : null}
+                </div>
+              ) : !pixContractAccepted ? (
+                <div className="mx-auto max-w-xl rounded-2xl border border-border bg-white p-6 shadow-sm sm:p-8">
+                  <ShieldCheck className="size-10 text-primary" />
+                  <h2 className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-foreground">
+                    Revise antes de gerar o PIX
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    Seu pedido foi criado. Confirme o contrato para visualizar o
+                    QR code e concluir o pagamento.
+                  </p>
+                  <div className="mt-6 rounded-xl border border-border bg-muted/20 p-4 text-sm leading-6">
+                    Ao continuar, você confirma que leu e aceita o{" "}
+                    {orderResponse.contract?.contract_file_url ? (
+                      <a
+                        href={orderResponse.contract.contract_file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold text-primary underline underline-offset-4"
+                      >
+                        contrato da matrícula
+                      </a>
+                    ) : (
+                      <span className="font-semibold">contrato da matrícula</span>
+                    )}
+                    .
+                  </div>
+                  <Button
+                    type="button"
+                    className="mt-5 h-12 w-full rounded-xl"
+                    onClick={() => setPixContractAccepted(true)}
+                  >
+                    Li e aceito · mostrar PIX
+                    <ArrowRight className="size-4" />
+                  </Button>
                 </div>
               ) : (
                 <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
@@ -2576,18 +2927,6 @@ export function CheckoutExperience({
                         </p>
                       ) : null}
                     </div>
-
-                    {orderResponse.contract?.contract_file_url ? (
-                      <a
-                        href={orderResponse.contract.contract_file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm font-semibold text-primary transition hover:bg-primary/10"
-                      >
-                        Ao continuar, você aceita o contrato da matrícula.
-                        <ExternalLink className="size-4" />
-                      </a>
-                    ) : null}
 
                     {paymentError ? (
                       <p className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">

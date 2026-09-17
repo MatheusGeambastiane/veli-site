@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Poppins } from "next/font/google";
 import "./globals.css";
+import { AnalyticsProvider } from "@/shared/analytics/analytics-provider";
 
 const fraunces = Fraunces({
   variable: "--font-fraunces",
@@ -33,7 +34,7 @@ export default function RootLayout({
         suppressHydrationWarning
         className="min-h-full bg-background text-foreground"
       >
-        {children}
+        <AnalyticsProvider>{children}</AnalyticsProvider>
       </body>
     </html>
   );

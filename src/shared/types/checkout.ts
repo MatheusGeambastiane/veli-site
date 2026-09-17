@@ -134,6 +134,7 @@ export type HotsiteLanguagesResponse = {
 
 export type HotsiteCheckoutOffer = {
   id: number;
+  student_class_id?: number;
   price: string;
   access_duration_days: number | null;
   days_of_week: string[];
@@ -226,6 +227,16 @@ export type HotsiteOrderPayload = {
   installments?: number;
   student_class_id?: number;
   preference_period?: string[];
+  coupon_code?: string;
+};
+
+export type CouponPreview = {
+  offer_id: number;
+  billing_option_code: string;
+  amount_original: string;
+  discount_amount: string;
+  amount_total: string;
+  coupon_code: string;
 };
 
 export type HotsiteCreditCard = {
@@ -264,6 +275,10 @@ export type HotsiteOrderResponse = {
   contract_acceptance_status: string;
   contract?: HotsiteOrderContract;
   checkout_status: string;
+  amount_original?: string;
+  discount_amount?: string;
+  amount_due?: string;
+  coupon_code?: string | null;
   pix_qr_code_base64?: string;
   pix_qr_code?: string;
   pix_copy_paste?: string;
