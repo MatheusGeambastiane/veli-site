@@ -22,9 +22,29 @@ export function SiteFooter() {
             </div>
           ))}
         </div>
-        <div className="flex flex-col items-center justify-between gap-3 border-t border-border py-6 text-sm text-muted-foreground md:flex-row">
-          <p>Português (Brasil)</p>
-          <p>© 2026 Veli Idiomas.</p>
+        <div className="flex flex-col gap-4 border-t border-border py-6 text-sm text-muted-foreground md:flex-row md:items-end md:justify-between">
+          <div className="space-y-1 text-center md:text-left">
+            <p>CNPJ: 65.261.198/0001-02</p>
+            <p>
+              Telefone:{" "}
+              <a className="hover:text-foreground" href="tel:+5571992997191">
+                (71) 99299-7191
+              </a>
+            </p>
+            <p>
+              E-mail:{" "}
+              <a
+                className="hover:text-foreground"
+                href="mailto:veliescola@gmail.com"
+              >
+                veliescola@gmail.com
+              </a>
+            </p>
+          </div>
+          <div className="space-y-1 text-center md:text-right">
+            <p>Português (Brasil)</p>
+            <p>© 2026 Veli Idiomas.</p>
+          </div>
         </div>
       </div>
     </footer>
