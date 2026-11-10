@@ -15,6 +15,7 @@ import type {
   HotsiteOffersResponse,
   HotsitePaymentStatusResponse,
   HotsiteStartCardPaymentPayload,
+  PaymentGatewayConfig,
   UpdateHotsiteUserPayload,
   ViaCepResponse,
 } from "@/shared/types";
@@ -42,6 +43,16 @@ export const checkoutService = {
     return httpClient.get<HotsiteAuthenticatedUser>("/hotsite/users/me/", {
       requiresAuth: true,
     });
+  },
+
+  getPaymentGatewayConfig(orderId: number | string, token?: string): Promise<ApiResponse<PaymentGatewayConfig>> {
+    return httpClient.get<PaymentGatewayConfig>(
+      `/student-portal/payments/config?order_id=${encodeURIComponent(String(orderId))}`,
+      {
+      requiresAuth: true,
+      tokenProvider: token ? () => token : undefined,
+      }
+    );
   },
 
   getLanguages(): Promise<ApiResponse<HotsiteLanguagesResponse>> {

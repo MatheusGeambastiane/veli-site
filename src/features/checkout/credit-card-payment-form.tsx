@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import { Check, CreditCard, Loader2, LockKeyhole } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -8,9 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type {
+  HotsiteAuthenticatedUser,
   HotsiteBillingOption,
   HotsiteStartCardPaymentPayload,
+  PaymentGatewayConfig,
 } from "@/shared/types";
+import {
+  AbacatePayCardFields,
+  type AbacatePayCardFieldsRef,
+} from "@/features/checkout/abacatepay-card-fields";
 
 type CardField = "name" | "number" | "expiration" | "cvv" | null;
 
@@ -37,6 +43,9 @@ type CreditCardPaymentFormProps = {
   contractUrl?: string | null;
   loading: boolean;
   error: string | null;
+  paymentConfig: PaymentGatewayConfig | null;
+  customer: HotsiteAuthenticatedUser | null;
+  amount: number;
   onSubmit: (payload: HotsiteStartCardPaymentPayload) => Promise<void>;
 };
 
@@ -148,6 +157,9 @@ export function CreditCardPaymentForm({
   contractUrl,
   loading,
   error,
+  paymentConfig,
+  customer,
+  amount,
   onSubmit,
 }: CreditCardPaymentFormProps) {
   const [card, setCard] = useState(initialCardForm);
@@ -155,6 +167,9 @@ export function CreditCardPaymentForm({
   const [holderIsCustomer, setHolderIsCustomer] = useState(true);
   const [activeField, setActiveField] = useState<CardField>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [tokenizationReady, setTokenizationReady] = useState(false);
+  const abacatePayRef = useRef<AbacatePayCardFieldsRef>(null);
+  const usesAbacatePay = paymentConfig?.gateway === "abacatepay";
   const allowedInstallments = Array.from(
     new Set(
       billingOption.allowed_installments.filter(
@@ -173,17 +188,17 @@ export function CreditCardPaymentForm({
     event.preventDefault();
     setValidationError(null);
 
-    if (cardDigits.length < 13) {
+    if (!usesAbacatePay && cardDigits.length < 13) {
       setValidationError("Informe um número de cartão válido.");
       return;
     }
 
-    if (!isValidExpiration(card.expirationDate)) {
+    if (!usesAbacatePay && !isValidExpiration(card.expirationDate)) {
       setValidationError("Informe uma data de validade futura no formato MM/AAAA.");
       return;
     }
 
-    if (card.cvv.length < 3) {
+    if (!usesAbacatePay && card.cvv.length < 3) {
       setValidationError("Informe um CVV válido.");
       return;
     }
@@ -207,13 +222,36 @@ export function CreditCardPaymentForm({
     const payload: HotsiteStartCardPaymentPayload = {
       accept_contract: true,
       holder_is_customer: holderIsCustomer,
-      credit_card: {
+    };
+
+    if (usesAbacatePay) {
+      if (!tokenizationReady || !paymentConfig?.public_key || !customer) {
+        setValidationError("O formulário seguro do cartão ainda não está pronto.");
+        return;
+      }
+      try {
+        const token = await abacatePayRef.current?.tokenize({
+          name: `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim(),
+          email: customer.email ?? "",
+          taxId: customer.tax_id ?? "",
+        });
+        if (!token) throw new Error("Não foi possível tokenizar o cartão.");
+        payload.card_token = token;
+      } catch (error) {
+        setValidationError(
+          error instanceof Error ? error.message : "Não foi possível validar o cartão."
+        );
+        return;
+      }
+      payload.holder_is_customer = true;
+    } else {
+      payload.credit_card = {
         name: card.name.trim().toUpperCase(),
         number: cardDigits,
         cvv: card.cvv,
         expiration_date: card.expirationDate,
-      },
-    };
+      };
+    }
 
     if (!isMonthly) {
       payload.installments = installments;
@@ -334,6 +372,21 @@ export function CreditCardPaymentForm({
           </h2>
         </div>
 
+        {usesAbacatePay ? (
+          paymentConfig?.public_key ? (
+            <AbacatePayCardFields
+              ref={abacatePayRef}
+              publicKey={paymentConfig.public_key}
+              amount={Math.round(amount * 100)}
+              scriptUrl={paymentConfig.card_script_url ?? "https://abacatepay.com/abacatepay.js"}
+              onReadyChange={setTokenizationReady}
+            />
+          ) : (
+            <p className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+              A chave pública da AbacatePay não está configurada.
+            </p>
+          )
+        ) : (
         <div className="grid gap-4">
           <Field id="card-name" label="Nome impresso no cartão">
             <Input
@@ -425,6 +478,7 @@ export function CreditCardPaymentForm({
             </Field>
           </div>
         </div>
+        )}
 
         {!isMonthly ? (
           <Field id="card-installments" label="Parcelas disponíveis">
@@ -450,7 +504,7 @@ export function CreditCardPaymentForm({
           </Field>
         ) : null}
 
-        <button
+        {!usesAbacatePay ? <button
           type="button"
           role="checkbox"
           aria-checked={holderIsCustomer}
@@ -469,9 +523,9 @@ export function CreditCardPaymentForm({
           <span className="text-sm font-semibold text-foreground">
             Os dados do proprietário são os mesmos que o meu
           </span>
-        </button>
+        </button> : null}
 
-        {!holderIsCustomer ? (
+        {!usesAbacatePay && !holderIsCustomer ? (
           <div className="animate-in fade-in slide-in-from-top-2 space-y-4 rounded-[1.2rem] border border-border bg-muted/20 p-4 duration-300">
             <h3 className="font-heading text-xl font-semibold text-foreground">
               Dados do proprietário

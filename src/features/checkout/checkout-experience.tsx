@@ -67,6 +67,7 @@ import type {
   HotsiteOrderResponse,
   HotsitePaymentStatusResponse,
   HotsiteStartCardPaymentPayload,
+  PaymentGatewayConfig,
   UpdateHotsiteUserPayload,
 } from "@/shared/types";
 import { trackAnalyticsEvent } from "@/shared/analytics/analytics";
@@ -590,6 +591,8 @@ export function CheckoutExperience({
     useState<HotsiteOrderResponse | null>(null);
   const [paymentStatus, setPaymentStatus] =
     useState<HotsitePaymentStatusResponse | null>(null);
+  const [paymentConfig, setPaymentConfig] = useState<PaymentGatewayConfig | null>(null);
+  const [paymentCustomer, setPaymentCustomer] = useState<HotsiteAuthenticatedUser | null>(null);
   const [cardPaymentSubmitted, setCardPaymentSubmitted] = useState(false);
   const [languagesLoading, setLanguagesLoading] = useState(false);
   const [offersLoading, setOffersLoading] = useState(false);
@@ -617,6 +620,7 @@ export function CheckoutExperience({
   const [offerDetailReloadKey, setOfferDetailReloadKey] = useState(0);
 
   const shouldLoadLanguages = mode === "page" || open;
+
   const registerEmailInvalid =
     registerEmailTouched && !isValidEmail(registerForm.email);
   const passwordStrength = useMemo(
@@ -654,6 +658,28 @@ export function CheckoutExperience({
       ? couponPreview
       : null;
   const isSelectedCreditCard = isCreditCardOption(selectedBilling);
+  useEffect(() => {
+    if (step !== "payment" || !isSelectedCreditCard || !orderResponse?.order_id) return;
+    let cancelled = false;
+
+    void Promise.all([
+      checkoutService.getPaymentGatewayConfig(orderResponse.order_id, authToken ?? undefined),
+      checkoutService.getCurrentUser(),
+    ])
+      .then(([configResponse, userResponse]) => {
+        if (!cancelled) {
+          setPaymentConfig(configResponse.data);
+          setPaymentCustomer(userResponse.data);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setPaymentError(getApiErrorMessage(error));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, isSelectedCreditCard, orderResponse?.order_id, step]);
   const activeBillingOptions = useMemo(
     () => offerDetail?.billing_options.filter((option) => option.is_active) ?? [],
     [offerDetail]
@@ -1097,6 +1123,8 @@ export function CheckoutExperience({
     setOrderPayload(null);
     setOrderResponse(null);
     setPaymentStatus(null);
+    setPaymentConfig(null);
+    setPaymentCustomer(null);
     setCardPaymentSubmitted(false);
     setCardPaymentLoading(false);
     setPixContractAccepted(false);
@@ -2805,6 +2833,9 @@ export function CheckoutExperience({
                   contractUrl={orderResponse.contract?.contract_file_url}
                   loading={cardPaymentLoading}
                   error={paymentError}
+                  paymentConfig={paymentConfig}
+                  customer={paymentCustomer}
+                  amount={Number(orderResponse.amount_due ?? selectedBilling.price)}
                   onSubmit={handleStartCardPayment}
                 />
               ) : isSelectedCreditCard ? (

@@ -249,7 +249,8 @@ export type HotsiteCreditCard = {
 export type HotsiteStartCardPaymentPayload = {
   accept_contract: true;
   holder_is_customer: boolean;
-  credit_card: HotsiteCreditCard;
+  credit_card?: HotsiteCreditCard;
+  card_token?: string;
   installments?: number;
   name?: string;
   phone?: string;
@@ -259,6 +260,14 @@ export type HotsiteStartCardPaymentPayload = {
   postal_code?: string;
   city?: string;
   state?: string;
+};
+
+export type PaymentGatewayConfig = {
+  gateway: "abacatepay" | "asaas";
+  methods: Array<"pix" | "credit_card">;
+  capabilities: string[];
+  public_key?: string;
+  card_script_url?: string;
 };
 
 export type HotsiteOrderContract = {
