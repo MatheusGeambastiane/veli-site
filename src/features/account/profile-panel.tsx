@@ -1,5 +1,7 @@
 "use client";
 
+import styles from "@/shared/styles/veli-account.module.css";
+
 import { useState, type FormEvent } from "react";
 import { Pencil, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -68,7 +70,7 @@ export function ProfilePanel({ user, onSaved, onSessionExpired }: {
   }
 
   return (
-    <section className="rounded-2xl border border-border bg-white p-5 sm:p-8" aria-label="Perfil">
+    <section className={`${styles.panel} rounded-2xl border border-border bg-white p-5 sm:p-8`} aria-label="Perfil">
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-6">
         <div>
           <h2 className="font-heading text-xl font-semibold">Seu perfil</h2>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -12,12 +13,17 @@ import styles from "@/shared/styles/veli-journey.module.css";
 export function JourneyHeader({
   label,
   secure = false,
+  accountActions,
 }: {
   label: string;
   secure?: boolean;
+  accountActions?: ReactNode;
 }) {
   return (
-    <header className={styles.header}>
+    <header
+      className={styles.header}
+      data-account={accountActions ? "true" : undefined}
+    >
       <a className={styles.skip} href="#conteudo">
         Pular para o conteúdo
       </a>
@@ -40,6 +46,9 @@ export function JourneyHeader({
             <span>Precisa de ajuda?</span>
           </Link>
         </nav>
+        {accountActions ? (
+          <div className={styles.accountActions}>{accountActions}</div>
+        ) : null}
       </div>
     </header>
   );

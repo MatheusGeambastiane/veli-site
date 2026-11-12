@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import styles from "@/shared/styles/veli-account.module.css";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ArrowUpRight, ChevronLeft, ChevronRight, Loader2, ReceiptText, RefreshCw, UserRound } from "lucide-react";
@@ -79,9 +80,9 @@ export function AccountArea({ section }: { section: "orders" | "profile" }) {
   return (
     <section className="page-shell py-10 sm:py-16">
       <div className="mx-auto max-w-6xl">
-        <div className="flex flex-wrap items-end justify-between gap-6 border-b border-border pb-8">
+        <div className={`${styles.heading} flex flex-wrap items-end justify-between gap-6`}>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">Minha conta · Veli</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em]">Minha conta · Veli</p>
             <h1 className="mt-3 font-heading text-4xl font-semibold tracking-tight sm:text-5xl">{section === "orders" ? "Meus pedidos" : "Meus dados"}</h1>
             <p className="mt-3 text-muted-foreground">{section === "orders" ? "Acompanhe suas matrículas e o status de cada pagamento." : "Seus dados pessoais e de contato, sempre atualizados."}</p>
           </div>
@@ -90,7 +91,7 @@ export function AccountArea({ section }: { section: "orders" | "profile" }) {
           </a>
         </div>
         <div className="mt-8 grid gap-8 lg:grid-cols-[200px_minmax(0,1fr)]">
-          <nav aria-label="Minha conta" className="flex gap-2 lg:flex-col">
+          <nav aria-label="Minha conta" className={`${styles.navigation} flex flex-wrap gap-2 lg:flex-col`}>
             {([{ href: "/meus-pedidos", label: "Meus pedidos", icon: ReceiptText }, { href: "/meus-dados", label: "Meus dados", icon: UserRound }]).map(({ href, label, icon: Icon }) => (
               <Link key={href} href={href} aria-current={path === href ? "page" : undefined}
                 className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${path === href ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted"}`}>
@@ -107,13 +108,13 @@ export function AccountArea({ section }: { section: "orders" | "profile" }) {
                   <p className="text-sm text-muted-foreground">{orders.count} {orders.count === 1 ? "pedido" : "pedidos"}</p>
                   <Button variant="ghost" onClick={() => refresh()} className="h-10"><RefreshCw className="size-4" /> Atualizar status</Button>
                 </div>
-                {orders.results.length === 0 ? <div className="rounded-2xl border border-dashed border-border p-10 text-center sm:p-16">
+                {orders.results.length === 0 ? <div className={`${styles.empty} rounded-2xl border border-dashed border-border p-10 text-center sm:p-16`}>
                   <ReceiptText className="mx-auto size-9 text-primary" />
                   <h2 className="mt-5 font-heading text-2xl font-semibold">Sua próxima jornada começa aqui</h2>
                   <p className="mt-3 text-sm text-muted-foreground">Você ainda não tem pedidos. Escolha um curso para começar.</p>
                   <Link href="/cursos" className="mt-6 inline-flex rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white">Conhecer os cursos</Link>
                 </div> : <div className="space-y-4">
-                  {orders.results.map((order) => <article key={order.order_id} className="rounded-2xl border border-border bg-white p-5 sm:p-6">
+                  {orders.results.map((order) => <article key={order.order_id} className={`${styles.panel} rounded-2xl border border-border bg-white p-5 sm:p-6`}>
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0">
                         <p className="text-xs text-muted-foreground">Pedido #{order.order_id} · <time dateTime={order.created_at}>{date.format(new Date(order.created_at))}</time></p>

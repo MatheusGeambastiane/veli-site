@@ -462,4 +462,47 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.theme .testWelcomeCopy > span { color: #fff8e3; }
+.theme .testWelcomeCopy > span {
+  color: #fff8e3;
+}
+
+.accountActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.header[data-account="true"] nav {
+  margin-left: auto;
+}
+@media (max-width: 767px) {
+  .header[data-account="true"] .back {
+    display: none;
+  }
+  .header[data-account="true"] .headerInner {
+    gap: 10px;
+  }
+  .header[data-account="true"] nav {
+    margin-left: auto;
+  }
+  .accountActions {
+    max-width: 160px;
+  }
+}
+
+@media (max-width: 639px) {
+  .accountActions :global([aria-haspopup="menu"]) {
+    gap: 4px;
+    padding-inline: 6px;
+  }
+  .accountActions :global([aria-haspopup="menu"]) > span:nth-child(2) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import styles from "@/shared/styles/veli-account.module.css";
+import journey from "@/shared/styles/veli-journey.module.css";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -196,28 +198,28 @@ export function LoginScreen({ nextPath }: { nextPath?: string }) {
 
   return (
     <section className="page-shell py-10 sm:py-14 lg:py-20">
-      <div className="mx-auto grid max-w-5xl overflow-hidden rounded-[2rem] border border-border bg-white shadow-2xl shadow-primary/10 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="relative hidden overflow-hidden bg-[#101b24] p-10 text-white lg:flex lg:flex-col lg:justify-between">
-          <div className="absolute -right-24 -top-24 size-72 rounded-full border-[48px] border-primary/15" />
+      <div className={`${styles.loginCard} mx-auto grid max-w-5xl overflow-hidden rounded-[2rem] border border-border bg-white lg:grid-cols-[0.9fr_1.1fr]`}>
+        <div className={styles.loginIntro}>
           <div className="relative">
             <span className="inline-flex size-12 items-center justify-center rounded-2xl bg-primary text-white">
               <Languages className="size-6" />
             </span>
-            <h1 className="mt-8 max-w-sm font-heading text-4xl font-semibold leading-tight tracking-[-0.04em]">
-              Continue sua jornada com a Veli.
-            </h1>
-            <p className="mt-4 max-w-sm leading-7 text-white/60">
+            <p className={styles.loginTitle}>
+              Continue sua jornada
+              <span className={journey.script}>com a Veli.</span>
+            </p>
+            <p className="mt-4 max-w-sm leading-7 text-[#fff8e3]">
               Entre para retomar sua matrícula e acessar suas escolhas com segurança.
             </p>
           </div>
-          <div className="relative space-y-4 text-sm text-white/75">
+          <div className={styles.loginBenefits}>
             <p className="flex items-center gap-3">
               <CheckCircle2 className="size-4 text-[#96c1f6]" />
               Sua oferta continua no carrinho
             </p>
             <p className="flex items-center gap-3">
               <ShieldCheck className="size-4 text-[#96c1f6]" />
-              Sessão protegida em cookies seguros
+              Seus dados protegidos
             </p>
           </div>
         </div>
@@ -227,15 +229,15 @@ export function LoginScreen({ nextPath }: { nextPath?: string }) {
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
               Área do aluno
             </p>
-            <h2 className="mt-3 font-heading text-4xl font-semibold tracking-[-0.04em] text-foreground">
+            <h1 className="mt-3 font-heading text-4xl font-semibold tracking-[-0.04em] text-foreground">
               Entre na sua conta
-            </h2>
+            </h1>
             <p className="mt-3 leading-7 text-muted-foreground">
               Use seu e-mail e senha ou continue com o Google.
             </p>
 
             {error ? (
-              <p className="mt-6 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+              <p role="alert" className="mt-6 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
                 {error}
               </p>
             ) : null}

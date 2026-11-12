@@ -1,0 +1,142 @@
+.heading {
+  position: relative;
+  padding: 32px 36px 40px;
+  border-radius: 20px 20px 0 0;
+  background: #2563eb;
+  color: #fff8e3;
+}
+.heading::after,
+.loginIntro::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 11px;
+  background: radial-gradient(circle at 10px 0, transparent 8px, #fff8e3 8.5px)
+    0 0 / 20px 12px repeat-x;
+}
+.heading p {
+  color: #fff8e3;
+}
+.heading > a {
+  background: #f7c44e;
+  color: #0b1f4d;
+}
+.heading :global(:focus-visible) {
+  outline-color: #fff8e3;
+}
+.navigation {
+  align-self: start;
+}
+.navigation a {
+  min-height: 48px;
+  border: 1px solid transparent;
+}
+.navigation a[aria-current="page"] {
+  color: #0448bf;
+  background: #dbeafe;
+  border-color: #2563eb50;
+}
+.navigation svg {
+  flex-shrink: 0;
+}
+.panel {
+  border-top: 4px solid #2563eb;
+  box-shadow: 0 12px 40px -24px #0448bf30;
+}
+.panel :global([data-slot="button"]) {
+  border-radius: 999px;
+}
+.empty {
+  background: white;
+  border-color: #2563eb50;
+}
+.loginCard {
+  box-shadow: 0 16px 48px -24px #0448bf40;
+}
+.loginIntro {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 36px;
+  background: #2563eb;
+  padding: 40px;
+  color: #fff8e3;
+}
+.loginIntro::after {
+  background: radial-gradient(circle at 10px 0, transparent 8px, white 8.5px) 0
+    0 / 20px 12px repeat-x;
+}
+.loginTitle {
+  font-family: var(--font-veli-heading), sans-serif;
+  font-size: 38px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-top: 28px;
+}
+.loginTitle span {
+  display: block;
+  color: #f7c44e;
+  font-size: 1.5em;
+  line-height: 1.4;
+}
+.loginBenefits {
+  display: grid;
+  gap: 16px;
+  font-size: 13px;
+  color: #fff8e3;
+}
+@media (min-width: 1024px) {
+  .loginIntro::after {
+    top: 0;
+    left: auto;
+    bottom: 0;
+    right: -1px;
+    width: 11px;
+    height: auto;
+    background: radial-gradient(circle at 0 10px, transparent 8px, white 8.5px)
+      0 0 / 12px 20px repeat-y;
+  }
+}
+@media (max-width: 639px) {
+  .heading {
+    padding: 28px 22px 36px;
+  }
+  .heading h1 {
+    font-size: 34px;
+  }
+  .heading p {
+    font-size: 14px;
+  }
+  .heading p:first-child {
+    font-size: 10px;
+  }
+  .navigation {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .navigation a {
+    font-size: 12px;
+    padding: 12px 10px;
+    justify-content: center;
+  }
+  .loginIntro {
+    padding: 28px 24px 36px;
+    gap: 20px;
+  }
+  .loginTitle {
+    font-size: 30px;
+    margin-top: 16px;
+  }
+  .loginIntro p:not(.loginTitle) {
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .loginBenefits {
+    display: none;
+  }
+}

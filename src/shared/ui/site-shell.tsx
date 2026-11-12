@@ -7,7 +7,7 @@ type SiteShellProps = {
   children: ReactNode;
   homeClassName: string;
   journeyClassName: string;
-  journeyHeader: ReactNode;
+  journeyHeaders: Record<string, ReactNode>;
   journeyFooter: ReactNode;
   homeHeader: ReactNode;
   homeFooter: ReactNode;
@@ -19,7 +19,7 @@ export function SiteShell({
   children,
   homeClassName,
   journeyClassName,
-  journeyHeader,
+  journeyHeaders,
   journeyFooter,
   homeHeader,
   homeFooter,
@@ -28,22 +28,23 @@ export function SiteShell({
 }: SiteShellProps) {
   const pathname = usePathname();
   const isHome = pathname === "/";
-  const isPlacement = pathname === "/teste-de-nivel";
+  const journeyHeader = journeyHeaders[pathname];
+  const isJourney = Boolean(journeyHeader);
   return (
     <div
       className={
         isHome
           ? homeClassName
-          : isPlacement
+          : isJourney
             ? journeyClassName
             : "relative flex min-h-screen flex-col overflow-x-hidden"
       }
     >
-      {isHome ? homeHeader : isPlacement ? journeyHeader : header}
+      {isHome ? homeHeader : isJourney ? journeyHeader : header}
       <main id="conteudo" className="flex-1">
         {children}
       </main>
-      {isHome ? homeFooter : isPlacement ? journeyFooter : footer}
+      {isHome ? homeFooter : isJourney ? journeyFooter : footer}
     </div>
   );
 }

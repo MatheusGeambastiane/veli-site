@@ -50,9 +50,14 @@ export const homeFaqs = [
       "A primeira turma começa em janeiro de 2027. A proposta combina conteúdos gravados para preparação e encontros semanais ao vivo com foco em conversação.",
   },
   {
+    question: "Para quem são as aulas da Veli?",
+    answer:
+      "As aulas de inglês e francês são voltadas a adolescentes e adultos, tanto para quem está começando do zero quanto para quem já tem conhecimentos do idioma.",
+  },
+  {
     question: "Posso participar mesmo começando do zero?",
     answer:
-      "Sim! Os cursos são voltados a adultos que estão começando e também a quem já tem conhecimentos do idioma. Você pode fazer o teste de nível para entender seu ponto de partida.",
+      "Sim! Você pode começar mesmo sem conhecimentos prévios do idioma. Faça o teste de nível para entender seu ponto de partida.",
   },
   {
     question: "Como funcionam as aulas gravadas e ao vivo?",

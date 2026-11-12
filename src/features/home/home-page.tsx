@@ -194,7 +194,6 @@ export function HomePage() {
             />
           </div>
           <div>
-            <p className="v-eyebrow">Conheça a Lara</p>
             <h2 id="lara-title">
               Uma escola criada por
               <br className="v-desktop-break" /> quem vive os idiomas.
