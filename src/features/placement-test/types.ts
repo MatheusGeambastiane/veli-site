@@ -7,9 +7,13 @@ export type PlacementLanguage = {
 
 export type PlacementQuestion = {
   id: number;
-  skill: "grammar" | "vocabulary" | "reading";
+  skill: "grammar" | "vocabulary" | "reading" | "listening";
   prompt: string;
   context: string;
+  audio_url?: string;
+  audio_source_url?: string;
+  audio_credit?: string;
+  audio_license?: string;
   options: Array<{ id: number; label: string; text: string }>;
 };
 

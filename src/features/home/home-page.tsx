@@ -184,16 +184,14 @@ export function HomePage() {
         aria-labelledby="lara-title"
       >
         <div className="v-container v-lara-grid">
-          <div
-            className="v-portrait"
-            role="img"
-            aria-label="Espaço reservado para a foto oficial de Lara Canro"
-          >
-            <span className="v-portrait-initials" aria-hidden="true">
-              LC
-            </span>
-            <span className="v-portrait-caption">Lara Canro</span>
-            <span className="v-portrait-pending">Retrato em breve</span>
+          <div className="v-portrait">
+            <Image
+              src="/lara_canro_imagem.jpg"
+              alt="Lara Canro, fundadora e professora da Veli"
+              fill
+              sizes="(max-width: 767px) 150px, (max-width: 1023px) 210px, 250px"
+              className="v-portrait-image"
+            />
           </div>
           <div>
             <p className="v-eyebrow">Conheça a Lara</p>

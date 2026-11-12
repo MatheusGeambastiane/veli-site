@@ -47,6 +47,7 @@ export const AbacatePayCardFields = forwardRef<AbacatePayCardFieldsRef, Props>(
     const containerRef = useRef<HTMLDivElement>(null);
     const checkoutRef = useRef<CheckoutInstance | null>(null);
     const [scriptLoaded, setScriptLoaded] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     useEffect(() => {
       if (
@@ -59,17 +60,32 @@ export const AbacatePayCardFields = forwardRef<AbacatePayCardFieldsRef, Props>(
         return;
       }
 
-      const checkout = window.AbacatePay.create({
-        publicKey,
-        amount,
-        onCardChange: ({ canTokenize }) => onReadyChange?.(canTokenize),
-      });
-      checkoutRef.current = checkout;
-      void checkout.mount(containerRef.current);
+      let disposed = false;
+      let checkout: CheckoutInstance | null = null;
+      const handleLoadError = () => {
+        if (!disposed) {
+          onReadyChange?.(false);
+          setLoadError("Não foi possível carregar o formulário seguro. Recarregue a página para tentar novamente.");
+        }
+      };
+      try {
+        checkout = window.AbacatePay.create({
+          publicKey,
+          amount,
+          onCardChange: ({ canTokenize }) => {
+            if (!disposed) onReadyChange?.(canTokenize);
+          },
+        });
+        checkoutRef.current = checkout;
+        void Promise.resolve(checkout.mount(containerRef.current)).catch(handleLoadError);
+      } catch {
+        handleLoadError();
+      }
 
       return () => {
+        disposed = true;
         onReadyChange?.(false);
-        checkout.destroy();
+        checkout?.destroy();
         checkoutRef.current = null;
       };
     }, [amount, onReadyChange, publicKey, scriptLoaded]);
@@ -97,7 +113,12 @@ export const AbacatePayCardFields = forwardRef<AbacatePayCardFieldsRef, Props>(
           src={scriptUrl}
           strategy="afterInteractive"
           onReady={() => setScriptLoaded(true)}
+          onError={() => {
+            onReadyChange?.(false);
+            setLoadError("Não foi possível carregar o formulário seguro. Recarregue a página para tentar novamente.");
+          }}
         />
+        {loadError ? <p role="alert" className="text-sm text-destructive">{loadError}</p> : null}
         <div
           ref={containerRef}
           className="min-h-36 rounded-xl border border-border bg-white p-3"

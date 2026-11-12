@@ -1,0 +1,82 @@
+[
+  {
+    "audio_file": "tatoeba-1121361.mp3",
+    "audio_download_url": "https://tatoeba.org/audio/download/1121361",
+    "audio_source_url": "https://tatoeba.org/en/sentences/show/1299110",
+    "audio_credit": "Áudio: Them (Tatoeba). Frase: rahim — CC BY 2.0 FR.",
+    "audio_license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "sha256": "c0c0c0a803a8f02fdc841a39a168d14144d8070c47b2c3e6c4154536c8de3bc6",
+    "verified_on": "2026-11-11"
+  },
+  {
+    "audio_file": "tatoeba-1247301.mp3",
+    "audio_download_url": "https://tatoeba.org/audio/download/1247301",
+    "audio_source_url": "https://tatoeba.org/en/sentences/show/12999192",
+    "audio_credit": "Áudio: rul (Tatoeba). Frase: rul — CC BY 2.0 FR.",
+    "audio_license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "sha256": "0558b2800b4d3654dc522b160208d6c5559da006e92213a03882aa0e25a3bbc6",
+    "verified_on": "2026-11-11"
+  },
+  {
+    "audio_file": "tatoeba-1285606.mp3",
+    "audio_download_url": "https://tatoeba.org/audio/download/1285606",
+    "audio_source_url": "https://tatoeba.org/en/sentences/show/13002289",
+    "audio_credit": "Áudio: rul (Tatoeba). Frase: rul — CC BY 2.0 FR.",
+    "audio_license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "sha256": "eb98391aee1a3ae919cbc042451bb43a5b2fca6aadddde0555f50ab4bdfdbae6",
+    "verified_on": "2026-11-11"
+  },
+  {
+    "audio_file": "tatoeba-1099990.mp3",
+    "audio_download_url": "https://tatoeba.org/audio/download/1099990",
+    "audio_source_url": "https://tatoeba.org/en/sentences/show/1488834",
+    "audio_credit": "Áudio: Them (Tatoeba). Frase: arnxy20 — CC BY 2.0 FR.",
+    "audio_license": "CC BY 4.0",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "sha256": "6361b1a6b90a5dc4b552f30df020dd8baa7fde9ee1ef54c649b498377e088f2e",
+    "verified_on": "2026-11-11"
+  },
+  {
+    "audio_file": "tatoeba-474294.mp3",
+    "audio_download_url": "https://tatoeba.org/audio/download/474294",
+    "audio_source_url": "https://tatoeba.org/en/sentences/show/6948",
+    "audio_credit": "Áudio: vlecomte (Tatoeba). Frase: TRANG — CC BY 2.0 FR.",
+    "audio_license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sha256": "a55f9e24077af905aef2e39b46c499ce29d1958aa3ef51b8c1d3fcc8223263bb",
+    "verified_on": "2026-11-11"
+  },
+  {
+    "audio_file": "tatoeba-538687.mp3",
+    "audio_download_url": "https://tatoeba.org/audio/download/538687",
+    "audio_source_url": "https://tatoeba.org/en/sentences/show/5324451",
+    "audio_credit": "Áudio: vlecomte (Tatoeba). Frase: Aiji — CC BY 2.0 FR.",
+    "audio_license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sha256": "0149572206d6b8ba1e41229cfae691e6b2a419035c4adf618c19df0e493e2f14",
+    "verified_on": "2026-11-11"
+  },
+  {
+    "audio_file": "tatoeba-538694.mp3",
+    "audio_download_url": "https://tatoeba.org/audio/download/538694",
+    "audio_source_url": "https://tatoeba.org/en/sentences/show/5461566",
+    "audio_credit": "Áudio: vlecomte (Tatoeba). Frase: Aiji — CC BY 2.0 FR.",
+    "audio_license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sha256": "8b564f109d54cc68377e38fff41201e267a6984abbcda2d54519756467951e73",
+    "verified_on": "2026-11-11"
+  },
+  {
+    "audio_file": "tatoeba-474288.mp3",
+    "audio_download_url": "https://tatoeba.org/audio/download/474288",
+    "audio_source_url": "https://tatoeba.org/en/sentences/show/3509",
+    "audio_credit": "Áudio: vlecomte (Tatoeba). Frase: le_petit_ane_gris — CC BY 2.0 FR.",
+    "audio_license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "sha256": "cc771d158120fda0888e7b8d5285f9db20dbca32c71dba2156351dea1a15ec9e",
+    "verified_on": "2026-11-11"
+  }
+]

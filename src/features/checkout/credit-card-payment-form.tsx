@@ -168,11 +168,13 @@ export function CreditCardPaymentForm({
   const [activeField, setActiveField] = useState<CardField>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [tokenizationReady, setTokenizationReady] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const abacatePayRef = useRef<AbacatePayCardFieldsRef>(null);
   const usesAbacatePay = paymentConfig?.gateway === "abacatepay";
   const allowedInstallments = Array.from(
     new Set(
-      billingOption.allowed_installments.filter(
+      (billingOption.allowed_installments.length ? billingOption.allowed_installments : [1]).filter(
         (installment) => Number.isInteger(installment) && installment > 0
       )
     )
@@ -180,13 +182,18 @@ export function CreditCardPaymentForm({
   const [installments, setInstallments] = useState(
     allowedInstallments[0] ?? 1
   );
-  const isMonthly = billingOption.code === "MONTHLY_CREDIT_CARD";
+  const isMonthly = billingOption.type === "recurring";
   const cardDigits = onlyDigits(card.number, 19);
   const previewNumber = card.number || "•••• •••• •••• ••••";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (submittingRef.current || loading) return;
     setValidationError(null);
+    if (!paymentConfig || !paymentConfig.methods.includes("credit_card")) {
+      setValidationError("Aguarde a configuração do pagamento com cartão.");
+      return;
+    }
 
     if (!usesAbacatePay && cardDigits.length < 13) {
       setValidationError("Informe um número de cartão válido.");
@@ -219,56 +226,63 @@ export function CreditCardPaymentForm({
       return;
     }
 
-    const payload: HotsiteStartCardPaymentPayload = {
-      accept_contract: true,
-      holder_is_customer: holderIsCustomer,
-    };
-
-    if (usesAbacatePay) {
-      if (!tokenizationReady || !paymentConfig?.public_key || !customer) {
-        setValidationError("O formulário seguro do cartão ainda não está pronto.");
-        return;
-      }
-      try {
-        const token = await abacatePayRef.current?.tokenize({
-          name: `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim(),
-          email: customer.email ?? "",
-          taxId: customer.tax_id ?? "",
-        });
-        if (!token) throw new Error("Não foi possível tokenizar o cartão.");
-        payload.card_token = token;
-      } catch (error) {
-        setValidationError(
-          error instanceof Error ? error.message : "Não foi possível validar o cartão."
-        );
-        return;
-      }
-      payload.holder_is_customer = true;
-    } else {
-      payload.credit_card = {
-        name: card.name.trim().toUpperCase(),
-        number: cardDigits,
-        cvv: card.cvv,
-        expiration_date: card.expirationDate,
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      const payload: HotsiteStartCardPaymentPayload = {
+        accept_contract: true,
+        holder_is_customer: holderIsCustomer,
       };
-    }
 
-    if (!isMonthly) {
-      payload.installments = installments;
-    }
+      if (usesAbacatePay) {
+        if (!tokenizationReady || !paymentConfig?.public_key || !customer) {
+          setValidationError("O formulário seguro do cartão ainda não está pronto.");
+          return;
+        }
+        try {
+          const token = await abacatePayRef.current?.tokenize({
+            name: `${customer.first_name ?? ""} ${customer.last_name ?? ""}`.trim(),
+            email: customer.email ?? "",
+            taxId: customer.tax_id ?? "",
+          });
+          if (!token) throw new Error("Não foi possível tokenizar o cartão.");
+          payload.card_token = token;
+        } catch (error) {
+          setValidationError(
+            error instanceof Error ? error.message : "Não foi possível validar o cartão."
+          );
+          return;
+        }
+        payload.holder_is_customer = true;
+      } else {
+        payload.credit_card = {
+          name: card.name.trim().toUpperCase(),
+          number: cardDigits,
+          cvv: card.cvv,
+          expiration_date: card.expirationDate,
+        };
+      }
 
-    if (!holderIsCustomer) {
-      payload.name = holder.name.trim();
-      payload.phone = onlyDigits(holder.phone, 11);
-      payload.address = holder.address.trim();
-      payload.address_number = holder.addressNumber.trim();
-      payload.province = holder.province.trim();
-      payload.postal_code = onlyDigits(holder.postalCode, 8);
-      payload.city = holder.city.trim();
-      payload.state = holder.state.trim().toUpperCase();
-    }
+      if (!isMonthly) {
+        payload.installments = installments;
+      }
 
-    await onSubmit(payload);
+      if (!holderIsCustomer) {
+        payload.name = holder.name.trim();
+        payload.phone = onlyDigits(holder.phone, 11);
+        payload.address = holder.address.trim();
+        payload.address_number = holder.addressNumber.trim();
+        payload.province = holder.province.trim();
+        payload.postal_code = onlyDigits(holder.postalCode, 8);
+        payload.city = holder.city.trim();
+        payload.state = holder.state.trim().toUpperCase();
+      }
+
+      await onSubmit(payload);
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -372,7 +386,9 @@ export function CreditCardPaymentForm({
           </h2>
         </div>
 
-        {usesAbacatePay ? (
+        {!paymentConfig ? (
+          <p role="status" className="text-sm text-muted-foreground">Aguardando configuração do pagamento seguro…</p>
+        ) : usesAbacatePay ? (
           paymentConfig?.public_key ? (
             <AbacatePayCardFields
               ref={abacatePayRef}
@@ -702,11 +718,14 @@ export function CreditCardPaymentForm({
           type="submit"
           className="h-12 w-full rounded-xl"
           disabled={
-            loading || (!isMonthly && allowedInstallments.length === 0)
+            loading || submitting || !paymentConfig ||
+            !paymentConfig.methods.includes("credit_card") ||
+            (usesAbacatePay && (!tokenizationReady || !customer)) ||
+            (!isMonthly && allowedInstallments.length === 0)
           }
         >
-          {loading ? <Loader2 className="size-4 animate-spin" /> : null}
-          Pagar com cartão
+          {loading || submitting ? <Loader2 className="size-4 animate-spin" /> : null}
+          {submitting ? "Processando pagamento…" : "Pagar com cartão"}
         </Button>
       </form>
     </div>

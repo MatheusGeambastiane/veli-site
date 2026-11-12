@@ -1,6 +1,9 @@
 "use client";
 
 import Image from "next/image";
+import journey from "@/shared/styles/veli-journey.module.css";
+import { getPasswordLoginFailure } from "@/features/auth/password-login-error";
+import { veliFontClassName } from "@/shared/ui/veli-fonts";
 import {
   FormEvent,
   MouseEvent,
@@ -459,7 +462,7 @@ function isExpiredStatus(status: HotsitePaymentStatusResponse | null) {
 }
 
 function isPaidStatus(status: HotsitePaymentStatusResponse | null) {
-  if (!status) {
+  if (!status || isFailedStatus(status)) {
     return false;
   }
 
@@ -478,7 +481,7 @@ function isFailedStatus(status: HotsitePaymentStatusResponse | null) {
 
   return [status.payment_status, status.checkout_status, status.order_status].some(
     (value) =>
-      ["failed", "rejected", "denied", "cancelled", "canceled"].includes(
+      ["failed", "rejected", "denied", "cancelled", "canceled", "refunded", "disputed", "chargeback"].includes(
         value?.toLowerCase()
       )
   );
@@ -516,14 +519,16 @@ function CheckoutError({
 
 function Field({
   label,
+  htmlFor,
   children,
 }: {
   label: string;
+  htmlFor: string;
   children: ReactNode;
 }) {
   return (
     <div className="space-y-2">
-      <Label className="text-muted-foreground">{label}</Label>
+      <Label htmlFor={htmlFor} className="text-muted-foreground">{label}</Label>
       {children}
     </div>
   );
@@ -555,6 +560,7 @@ export function CheckoutExperience({
     useState<PaymentBillingType>("one_time");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authOrigin, setAuthOrigin] = useState<AuthOrigin>("checkout");
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -828,6 +834,7 @@ export function CheckoutExperience({
       setOfferDetailError(null);
       setAuthOrigin(action === "login" ? "cart" : "checkout");
       setAuthMode("login");
+      setAuthNotice(null);
       setFormError(null);
       setStep(action === "login" ? "account" : "selection");
     };
@@ -1100,6 +1107,7 @@ export function CheckoutExperience({
   ]);
 
   const resetFlow = () => {
+    setAuthNotice(null);
     setStep("language");
     setOffers([]);
     setSelectedLanguage(null);
@@ -1291,6 +1299,8 @@ export function CheckoutExperience({
       // O pedido já foi criado; falhas de armazenamento não interrompem o fluxo.
     }
     setOrderResponse(order.data);
+    setPaymentConfig(null);
+    setPaymentCustomer(null);
     setPaymentStatus(null);
     setPaymentError(null);
     setCardPaymentSubmitted(false);
@@ -1337,11 +1347,18 @@ export function CheckoutExperience({
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const submittedEmail = loginForm.email.trim();
+    let authenticated = false;
     setAuthLoading(true);
     setFormError(null);
+    setAuthNotice(null);
 
     try {
-      await checkoutService.authenticateUser(loginForm);
+      await checkoutService.authenticateUser({
+        ...loginForm,
+        email: submittedEmail,
+      });
+      authenticated = true;
       setAuthToken(null);
       setHasAuthenticatedSession(true);
       notifyAuthSessionChanged();
@@ -1354,7 +1371,31 @@ export function CheckoutExperience({
 
       await createOrderAfterAuth();
     } catch (error) {
-      setFormError(getApiErrorMessage(error));
+      // An order failure after login must never be treated as an unknown account.
+      const failure = authenticated ? null : getPasswordLoginFailure(error);
+      if (failure === "user_not_found") {
+        setRegisterForm((current) => ({
+          ...current,
+          email: submittedEmail,
+          password: "",
+          confirmPassword: "",
+        }));
+        setLoginForm((current) => ({ ...current, password: "" }));
+        setRegisterStage("identity");
+        setRegisterEmailTouched(false);
+        setConfirmPasswordTouched(false);
+        setShowLoginPassword(false);
+        setShowRegisterPassword(false);
+        setShowConfirmPassword(false);
+        setAuthMode("register");
+        setAuthNotice(
+          "Não encontramos uma conta com este e-mail. Complete seus dados para criar a sua.",
+        );
+      } else {
+        setFormError(
+          failure === "incorrect_password" ? "Senha incorreta." : getApiErrorMessage(error),
+        );
+      }
     } finally {
       setAuthLoading(false);
     }
@@ -1550,7 +1591,7 @@ export function CheckoutExperience({
   };
 
   const renderSelectionSummary = () => (
-    <aside className="space-y-5 rounded-2xl border border-[#dce4ee] bg-white p-5 shadow-[0_18px_50px_rgba(23,43,77,0.08)] lg:sticky lg:top-6 lg:self-start">
+    <aside className={`${journey.summary} space-y-5 rounded-2xl border border-[#dce4ee] bg-white p-5 shadow-[0_18px_50px_rgba(23,43,77,0.08)] lg:sticky lg:top-6 lg:self-start`}>
       <div className="border-b border-border pb-5">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary">
           Sua matrícula
@@ -1752,7 +1793,7 @@ export function CheckoutExperience({
             : "bg-white"
         }
       >
-        <div className="mb-8 grid gap-7 lg:grid-cols-[1fr_560px] lg:items-end">
+        <div className={`${journey.checkoutHeading} mb-8 grid gap-7 lg:grid-cols-[1fr_560px] lg:items-end`}>
           <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary">
                 Matrícula Veli
@@ -1783,6 +1824,7 @@ export function CheckoutExperience({
                     <div
                       key={journeyStep.label}
                       role="listitem"
+                      aria-current={isActive ? "step" : undefined}
                       className={`flex items-center gap-3 rounded-xl border px-3 py-3 transition-colors ${
                         isActive
                           ? "border-primary/30 bg-primary/[0.055]"
@@ -1819,7 +1861,7 @@ export function CheckoutExperience({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[#dce4ee] bg-white p-5 shadow-[0_24px_70px_rgba(24,45,78,0.08)] sm:p-7 lg:p-8">
+        <div className={`${journey.checkoutPanel} rounded-2xl border border-border bg-white p-5 sm:p-7 lg:p-8`}>
           {placementNotice ? <p role="status" className="mb-5 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm">{placementNotice}</p> : null}
           {step === "language" ? (
             <div className="space-y-6">
@@ -1845,7 +1887,7 @@ export function CheckoutExperience({
                         key={language.id}
                         type="button"
                         onClick={() => handleLanguageSelect(language)}
-                        className="group flex min-h-24 items-center gap-4 rounded-2xl border border-border bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-primary/[0.035] hover:shadow-sm active:translate-y-0"
+                        className={`${journey.languageChoice} group flex min-h-24 items-center gap-4 rounded-2xl border border-border bg-white p-4 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-primary/[0.035] hover:shadow-sm active:translate-y-0`}
                       >
                         <Image
                           src={language.image}
@@ -2198,6 +2240,7 @@ export function CheckoutExperience({
                   disabled={authLoading}
                   onClick={() => {
                     setAuthMode("login");
+                    setAuthNotice(null);
                     setRegisterStage("identity");
                     setShowLoginPassword(false);
                     setFormError(null);
@@ -2213,6 +2256,7 @@ export function CheckoutExperience({
                   disabled={authLoading}
                   onClick={() => {
                     setAuthMode("register");
+                    setAuthNotice(null);
                     setRegisterStage("identity");
                     setShowLoginPassword(false);
                     setFormError(null);
@@ -2223,8 +2267,14 @@ export function CheckoutExperience({
                 </Button>
               </div>
 
+              {authNotice ? (
+                <p role="status" className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm text-foreground">
+                  {authNotice}
+                </p>
+              ) : null}
+
               {formError ? (
-                <p className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+                <p role="alert" className="rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
                   {formError}
                 </p>
               ) : null}
@@ -2234,8 +2284,8 @@ export function CheckoutExperience({
                   onSubmit={handleLogin}
                   className="space-y-5 rounded-[1.4rem] border border-border bg-white p-5 shadow-sm"
                 >
-                  <Field label="E-mail">
-                    <Input
+                  <Field htmlFor="checkout-login-email" label="E-mail">
+                    <Input id="checkout-login-email"
                       type="email"
                       required
                       autoComplete="username"
@@ -2249,9 +2299,9 @@ export function CheckoutExperience({
                       className="h-11"
                     />
                   </Field>
-                  <Field label="Senha">
+                  <Field htmlFor="checkout-login-password" label="Senha">
                     <div className="relative">
-                      <Input
+                      <Input id="checkout-login-password"
                         type={showLoginPassword ? "text" : "password"}
                         required
                         autoComplete="current-password"
@@ -2338,8 +2388,8 @@ export function CheckoutExperience({
                   {registerStage === "identity" ? (
                     <>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Nome">
-                      <Input
+                    <Field htmlFor="checkout-register-firstName" label="Nome">
+                      <Input id="checkout-register-firstName"
                         required
                         value={registerForm.firstName}
                         onChange={(event) =>
@@ -2351,8 +2401,8 @@ export function CheckoutExperience({
                         className="h-11"
                       />
                     </Field>
-                    <Field label="Sobrenome">
-                      <Input
+                    <Field htmlFor="checkout-register-lastName" label="Sobrenome">
+                      <Input id="checkout-register-lastName"
                         required
                         value={registerForm.lastName}
                         onChange={(event) =>
@@ -2364,8 +2414,8 @@ export function CheckoutExperience({
                         className="h-11"
                       />
                     </Field>
-                    <Field label="CPF">
-                      <Input
+                    <Field htmlFor="checkout-register-cpf" label="CPF">
+                      <Input id="checkout-register-cpf"
                         required
                         inputMode="numeric"
                         autoComplete="off"
@@ -2383,8 +2433,8 @@ export function CheckoutExperience({
                         className="h-11"
                       />
                     </Field>
-                    <Field label="Telefone">
-                      <Input
+                    <Field htmlFor="checkout-register-phone" label="Telefone">
+                      <Input id="checkout-register-phone"
                         required
                         type="tel"
                         inputMode="tel"
@@ -2404,9 +2454,9 @@ export function CheckoutExperience({
                       />
                     </Field>
                     <div className="sm:col-span-2">
-                      <Field label="E-mail">
+                      <Field htmlFor="checkout-register-email" label="E-mail">
                         <div className="space-y-2">
-                          <Input
+                          <Input id="checkout-register-email"
                             type="email"
                             required
                             autoComplete="email"
@@ -2470,10 +2520,10 @@ export function CheckoutExperience({
                         </div>
                       </Field>
                     </div>
-                    <Field label="Senha">
+                    <Field htmlFor="checkout-register-password" label="Senha">
                       <div className="space-y-3">
                         <div className="relative">
-                          <Input
+                          <Input id="checkout-register-password"
                             type={showRegisterPassword ? "text" : "password"}
                             required
                             minLength={8}
@@ -2543,10 +2593,10 @@ export function CheckoutExperience({
                         ) : null}
                       </div>
                     </Field>
-                    <Field label="Confirmar senha">
+                    <Field htmlFor="checkout-register-confirmPassword" label="Confirmar senha">
                       <div className="space-y-2">
                         <div className="relative">
-                          <Input
+                          <Input id="checkout-register-confirmPassword"
                             type={showConfirmPassword ? "text" : "password"}
                             required
                             minLength={8}
@@ -2613,9 +2663,9 @@ export function CheckoutExperience({
                   ) : (
                     <>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="CEP">
+                    <Field htmlFor="checkout-register-zipCode" label="CEP">
                       <div className="relative">
-                        <Input
+                        <Input id="checkout-register-zipCode"
                           required
                           value={registerForm.zipCode}
                           onBlur={handleCepBlur}
@@ -2632,8 +2682,8 @@ export function CheckoutExperience({
                         ) : null}
                       </div>
                     </Field>
-                    <Field label="Rua">
-                      <Input
+                    <Field htmlFor="checkout-register-address" label="Rua">
+                      <Input id="checkout-register-address"
                         required
                         value={registerForm.address}
                         onChange={(event) =>
@@ -2645,8 +2695,8 @@ export function CheckoutExperience({
                         className="h-11"
                       />
                     </Field>
-                    <Field label="Número">
-                      <Input
+                    <Field htmlFor="checkout-register-addressNumber" label="Número">
+                      <Input id="checkout-register-addressNumber"
                         required
                         value={registerForm.addressNumber}
                         onChange={(event) =>
@@ -2658,8 +2708,8 @@ export function CheckoutExperience({
                         className="h-11"
                       />
                     </Field>
-                    <Field label="Bairro">
-                      <Input
+                    <Field htmlFor="checkout-register-province" label="Bairro">
+                      <Input id="checkout-register-province"
                         required
                         value={registerForm.province}
                         onChange={(event) =>
@@ -2671,8 +2721,8 @@ export function CheckoutExperience({
                         className="h-11"
                       />
                     </Field>
-                    <Field label="Cidade">
-                      <Input
+                    <Field htmlFor="checkout-register-city" label="Cidade">
+                      <Input id="checkout-register-city"
                         required
                         value={registerForm.city}
                         onChange={(event) =>
@@ -2684,8 +2734,8 @@ export function CheckoutExperience({
                         className="h-11"
                       />
                     </Field>
-                    <Field label="Estado">
-                      <select
+                    <Field htmlFor="checkout-register-state" label="Estado">
+                      <select id="checkout-register-state"
                         required
                         value={registerForm.state}
                         onChange={(event) =>
@@ -2703,8 +2753,8 @@ export function CheckoutExperience({
                         ))}
                       </select>
                     </Field>
-                    <Field label="País">
-                      <Input
+                    <Field htmlFor="checkout-register-country" label="País">
+                      <Input id="checkout-register-country"
                         required
                         value={registerForm.country}
                         onChange={(event) =>
@@ -2944,6 +2994,7 @@ export function CheckoutExperience({
                           size="icon"
                           className="rounded-lg"
                           onClick={handleCopyPix}
+                          aria-label="Copiar código PIX"
                           disabled={!getCopyPaste(orderResponse)}
                         >
                           <Copy className="size-4" />
@@ -2982,7 +3033,7 @@ export function CheckoutExperience({
     <Dialog open={open} onOpenChange={handleModalOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="max-w-5xl rounded-[1.8rem] border border-border bg-white p-0 sm:max-w-5xl"
+        className={`${journey.theme} ${veliFontClassName} max-w-5xl rounded-[1.8rem] border border-border bg-white p-0 sm:max-w-5xl`}
       >
         <DialogHeader className="sr-only">
           <DialogTitle>{title}</DialogTitle>

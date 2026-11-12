@@ -1,7 +1,6 @@
 export const homeNavigation = [
   { href: "/#idiomas", label: "Idiomas" },
   { href: "/#como-funciona", label: "Como funciona" },
-  { href: "/#lara", label: "Lara" },
   { href: "/#duvidas", label: "Dúvidas" },
 ];
 

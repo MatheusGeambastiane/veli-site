@@ -10,9 +10,12 @@ import {
   LogOut,
   ShoppingBag,
   UserRound,
+  ArrowUpRight,
+  ReceiptText,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { publicEnv } from "@/shared/lib/env";
 import { CheckoutCart } from "@/features/checkout/checkout-cart";
 import { checkoutService } from "@/features/checkout/services/checkout-service";
 import {
@@ -205,6 +208,16 @@ export function SiteCart() {
                     <p className="truncate text-sm font-semibold">{getUserFullName(user)}</p>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">{user.email}</p>
                   </div>
+                  <Menu.Item render={<Link href="/meus-pedidos" />} className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-3 text-sm outline-none data-highlighted:bg-muted">
+                    <ReceiptText className="size-4" /> Meus pedidos
+                  </Menu.Item>
+                  <Menu.Item render={<Link href="/meus-dados" />} className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-3 text-sm outline-none data-highlighted:bg-muted">
+                    <UserRound className="size-4" /> Meus dados
+                  </Menu.Item>
+                  <Menu.Item render={<a href={publicEnv.platformUrl} target="_blank" rel="noopener noreferrer" />} className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-3 text-sm outline-none data-highlighted:bg-muted">
+                    <ArrowUpRight className="size-4" /> Acessar a plataforma
+                    <span className="sr-only">(nova aba)</span>
+                  </Menu.Item>
                   <Menu.Item
                     disabled={logoutLoading}
                     onClick={() => void handleLogout()}

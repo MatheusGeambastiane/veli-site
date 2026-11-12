@@ -56,6 +56,7 @@ export const placementTestService = {
   languages: getLanguages,
   start: async (payload: {
     name: string;
+    email: string;
     phone: string;
     language_id: number;
     analytics_session_id: string;

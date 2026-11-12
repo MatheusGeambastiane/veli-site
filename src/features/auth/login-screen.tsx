@@ -61,11 +61,11 @@ function getApiErrorMessage(error: unknown) {
   return "Não foi possível entrar. Confira seus dados e tente novamente.";
 }
 
-function getPostLoginPath() {
-  return readCheckoutCart() ? "/checkout" : "/";
+function getPostLoginPath(nextPath?: string) {
+  return nextPath || (readCheckoutCart() ? "/checkout" : "/meus-pedidos");
 }
 
-export function LoginScreen() {
+export function LoginScreen({ nextPath }: { nextPath?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -84,7 +84,7 @@ export function LoginScreen() {
         const session = await checkoutService.getSessionStatus();
 
         if (session.authenticated && !cancelled) {
-          router.replace(getPostLoginPath());
+          router.replace(getPostLoginPath(nextPath));
           return;
         }
       } catch {
@@ -101,11 +101,11 @@ export function LoginScreen() {
     return () => {
       cancelled = true;
     };
-  }, [router]);
+  }, [router, nextPath]);
 
   const finishLogin = () => {
     notifyAuthSessionChanged();
-    router.replace(getPostLoginPath());
+    router.replace(getPostLoginPath(nextPath));
     router.refresh();
   };
 

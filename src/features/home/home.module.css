@@ -498,32 +498,17 @@
   max-width: 1060px;
 }
 .root :global(.v-portrait) {
+  position: relative;
+  overflow: hidden;
   aspect-ratio: 4 / 5;
   background: #dae3ed;
   border: 8px solid #ffffff;
   box-shadow: 0 4px 12px #0b1f4d08;
   transform: rotate(-4deg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
 }
-.root :global(.v-portrait-initials) {
-  font-family: var(--font-veli-heading), sans-serif;
-  font-size: 65px;
-  font-weight: 500;
-  color: #637990;
-  letter-spacing: -0.07em;
-}
-.root :global(.v-portrait-caption) {
-  font-size: 14px;
-  margin-top: 12px;
-  font-weight: 600;
-}
-.root :global(.v-portrait-pending) {
-  font-size: 10px;
-  color: #475569;
-  margin-top: 5px;
+.root :global(.v-portrait-image) {
+  object-fit: cover;
+  object-position: center;
 }
 .root :global(.v-lara-description) {
   font-size: 15px;
@@ -828,15 +813,6 @@
   }
   .root :global(.v-portrait) {
     width: 150px;
-  }
-  .root :global(.v-portrait-initials) {
-    font-size: 44px;
-  }
-  .root :global(.v-portrait-caption) {
-    font-size: 12px;
-  }
-  .root :global(.v-portrait-pending) {
-    font-size: 9px;
   }
   .root :global(.v-faq-grid) {
     grid-template-columns: 1fr;

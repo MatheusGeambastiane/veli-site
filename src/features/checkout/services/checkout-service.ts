@@ -47,7 +47,7 @@ export const checkoutService = {
 
   getPaymentGatewayConfig(orderId: number | string, token?: string): Promise<ApiResponse<PaymentGatewayConfig>> {
     return httpClient.get<PaymentGatewayConfig>(
-      `/student-portal/payments/config?order_id=${encodeURIComponent(String(orderId))}`,
+      `/hotsite/payments/config/?order_id=${encodeURIComponent(String(orderId))}`,
       {
       requiresAuth: true,
       tokenProvider: token ? () => token : undefined,
@@ -106,10 +106,10 @@ export const checkoutService = {
   },
 
   updateCurrentUser(
-    payload: UpdateHotsiteUserPayload,
+    payload: Partial<UpdateHotsiteUserPayload>,
     token?: string
   ): Promise<ApiResponse<HotsiteAuthenticatedUser>> {
-    return httpClient.patch<HotsiteAuthenticatedUser, UpdateHotsiteUserPayload>(
+    return httpClient.patch<HotsiteAuthenticatedUser, Partial<UpdateHotsiteUserPayload>>(
       "/hotsite/users/me/",
       payload,
       {

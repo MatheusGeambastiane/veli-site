@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import journey from "@/shared/styles/veli-journey.module.css";
+import { veliFontClassName } from "@/shared/ui/veli-fonts";
 import Image from "next/image";
 import { AsYouType, parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { phoneCountries, type PhoneCountry } from "./phone-countries";
@@ -13,13 +15,16 @@ import {
   ChevronRight,
   Languages,
   Loader2,
+  Mail,
   Phone,
+  Plane,
   RotateCcw,
   UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { QuestionAudio } from "./question-audio";
 import { placementTestService } from "@/features/placement-test/placement-test-service";
 import type {
   PlacementLanguage,
@@ -82,7 +87,7 @@ function PhoneCountrySelect({ value, onChange }: { value: string; onChange: (val
                         </Select.Trigger>
                         <Select.Portal>
                           <Select.Positioner sideOffset={6} align="start" alignItemWithTrigger={false} className="z-50">
-                            <Select.Popup className="w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-input bg-background p-1 shadow-lg">
+                            <Select.Popup className={`${journey.theme} ${veliFontClassName} w-72 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-input bg-background p-1 shadow-lg`}>
                               <Select.List className="max-h-72 overflow-y-auto overscroll-contain">
                                 {phoneCountries.map((country) => (
                                   <Select.Item key={country.code} value={country.code} className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2.5 text-sm outline-none data-highlighted:bg-primary/10 data-highlighted:text-primary">
@@ -123,7 +128,9 @@ export function PlacementTestPage() {
   const [phase, setPhase] = useState<Phase>("welcome");
   const [languages, setLanguages] = useState<PlacementLanguage[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState<PlacementLanguage | null>(null);
+  const [audioPlayedFor, setAudioPlayedFor] = useState<number | null>(null);
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [phoneCountryCode, setPhoneCountryCode] = useState("BR");
   const [marketingConsent, setMarketingConsent] = useState(false);
@@ -216,7 +223,7 @@ export function PlacementTestPage() {
   const resultCopy = result ? levelContent[result.level] : null;
   const skillLabel = useMemo(
     () =>
-      ({ grammar: "Estrutura", vocabulary: "Vocabulário", reading: "Compreensão" })[
+      ({ grammar: "Estrutura", vocabulary: "Vocabulário", reading: "Compreensão", listening: "Compreensão auditiva" })[
         question?.skill ?? "grammar"
       ],
     [question?.skill],
@@ -235,6 +242,7 @@ export function PlacementTestPage() {
     try {
       const response = await placementTestService.start({
         name: name.trim(),
+        email: email.trim(),
         phone: internationalPhone(phone, phoneCountry),
         language_id: selectedLanguage.id,
         analytics_session_id: getAnalyticsSessionId(),
@@ -266,7 +274,7 @@ export function PlacementTestPage() {
   }
 
   async function submitAnswer() {
-    if (!leadId || !question || !selectedOption) return;
+    if (!leadId || !question || !selectedOption || (question.skill === "listening" && audioPlayedFor !== question.id)) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -322,32 +330,38 @@ export function PlacementTestPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[72vh] items-center justify-center">
+      <div role="status" className="flex min-h-[72vh] items-center justify-center gap-3">
+        <span className="text-sm text-muted-foreground">Preparando seu teste…</span>
         <Loader2 className="size-8 animate-spin text-primary" />
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-[calc(100vh-5rem)] overflow-hidden bg-background text-foreground">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(circle_at_top,rgba(0,100,224,0.10),transparent_68%)]" />
-      <div className="absolute inset-x-0 top-0 h-1 bg-primary/10">
-        <div className="h-full bg-primary transition-[width] duration-500" style={{ width: `${progressPercent}%` }} />
+    <div className={`${journey.placement} relative min-h-[calc(100dvh-5rem)] text-foreground`} data-phase={phase}>
+      <div className={journey.progress} role="progressbar" aria-label="Progresso do teste" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progressPercent)}>
+        <span style={{ width: `${progressPercent}%` }}><Plane size={20} aria-hidden="true" /></span>
       </div>
 
-      <main className="relative mx-auto flex min-h-[calc(100vh-5rem)] w-full max-w-6xl flex-col px-4 py-7 sm:px-6 sm:py-10">
+      <div className="relative mx-auto flex min-h-[calc(100dvh-12rem)] w-full max-w-6xl flex-col px-4 py-7 sm:px-6 sm:py-10">
         <section className="my-auto w-full py-6">
+          {error && (phase === "welcome" || phase === "language") ? (
+            <div role="alert" className="mb-6 rounded-xl border border-destructive/20 bg-white p-4 text-sm text-destructive">
+              <p>{error}</p>
+              <Button variant="outline" className="mt-3 h-11" onClick={() => window.location.reload()}>Tentar novamente</Button>
+            </div>
+          ) : null}
           {phase === "welcome" ? (
-            <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16">
-              <div className="max-w-xl">
+            <div className={`${journey.testWelcome} grid items-center gap-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16`}>
+              <div className={journey.testWelcomeCopy}>
                 <span className="inline-flex rounded-full border border-primary/15 bg-primary/5 px-4 py-1.5 text-xs font-semibold text-primary">Inglês e francês</span>
-                <h1 className="mt-6 font-heading text-5xl font-semibold leading-[1.06] tracking-[-0.04em] sm:text-6xl">Seu próximo passo começa pelo seu nível.</h1>
+                <h1 className="mt-6 font-heading text-5xl font-semibold leading-[1.06] tracking-[-0.04em] sm:text-6xl">Seu próximo passo começa pelo <span className={journey.script}>seu nível.</span></h1>
                 <p className="mt-6 max-w-md text-base leading-7 text-muted-foreground sm:text-lg">Descubra onde você está e encontre a turma certa para avançar.</p>
                 <Button onClick={startTest} className="mt-8 h-13 rounded-full px-8 text-base shadow-lg shadow-primary/15">Descobrir meu nível <ArrowRight className="size-4" /></Button>
                 <p className="mt-5 text-xs font-medium text-muted-foreground">14 perguntas · Resultado ao final</p>
               </div>
 
-              <div className="relative mx-auto w-full max-w-lg px-2 py-5 sm:px-5" role="img" aria-label="Ilustração de um quiz de inglês, com uma pergunta e três alternativas; would learn está selecionada.">
+              <div className={`${journey.quizPreview} relative mx-auto w-full max-w-lg px-2 py-5 sm:px-5`} role="img" aria-label="Ilustração de um quiz de inglês, com uma pergunta e três alternativas; would learn está selecionada.">
                 <div aria-hidden="true" className="absolute inset-0 rotate-3 rounded-[2.5rem] border border-primary/10 bg-accent" />
                 <div aria-hidden="true" className="relative overflow-hidden rounded-[1.75rem] border border-border bg-card shadow-[0_24px_60px_-24px_rgba(0,100,224,0.22)]">
                   <div className="flex items-center justify-between border-b border-border/70 px-5 py-4 sm:px-7">
@@ -374,12 +388,12 @@ export function PlacementTestPage() {
           ) : null}
 
           {phase === "language" ? (
-            <div className="mx-auto max-w-2xl">
+            <div className={`${journey.testPanel} mx-auto max-w-2xl`}>
               <button onClick={() => setPhase("welcome")} className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> Voltar</button>
               <h1 className="font-heading text-4xl font-semibold tracking-[-0.03em] sm:text-5xl">Escolha o idioma.</h1>
               <div className="mt-7 grid gap-3 sm:grid-cols-2">
                 {languages.map((language) => (
-                  <button key={language.id} onClick={() => { setSelectedLanguage(language); setPhase("contact"); }} className="group flex items-center gap-4 rounded-2xl border border-border bg-card p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <button key={language.id} onClick={() => { setSelectedLanguage(language); setPhase("contact"); }} className={`${journey.languageChoice} group flex items-center gap-4 rounded-2xl border border-border bg-card p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`}>
                     <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10 text-primary">
                       {language.icon ? (
                         <Image src={language.icon} alt="" width={48} height={48} unoptimized className="size-12 object-contain" />
@@ -407,8 +421,12 @@ export function PlacementTestPage() {
                     <div className="relative"><UserRound className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="placement-name" name="name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Seu nome" className="h-13 rounded-xl bg-background pl-12 text-base" autoFocus /></div>
                   </div>
                   <div className="space-y-2">
+                    <Label htmlFor="placement-email">E-mail (opcional)</Label>
+                    <div className="relative"><Mail aria-hidden="true" className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="placement-email" name="email" type="email" inputMode="email" autoComplete="email" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@exemplo.com" className="h-13 rounded-xl bg-background pl-12 text-base" /></div>
+                  </div>
+                  <div className="space-y-2">
                     <Label htmlFor="placement-phone">WhatsApp</Label>
-                    <div className="grid grid-cols-[8.75rem_1fr] gap-2 sm:grid-cols-[10rem_1fr]">
+                    <div className={`${journey.phoneFields} grid grid-cols-[8.75rem_minmax(0,1fr)] gap-2 sm:grid-cols-[10rem_minmax(0,1fr)]`}>
                       <PhoneCountrySelect value={phoneCountryCode} onChange={(value) => { setPhoneCountryCode(value); setPhone(""); }} />
                       <div className="relative"><Phone className="absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" /><Input id="placement-phone" name="phone" type="tel" inputMode="tel" autoComplete="tel-national" value={phone} onChange={(event) => setPhone(formatPhone(event.target.value, phoneCountry))} placeholder={phoneCountry.code === "BR" ? "(00) 00000-0000" : "Número"} className="h-13 rounded-xl bg-background pl-12 text-base" /></div>
                     </div>
@@ -422,10 +440,11 @@ export function PlacementTestPage() {
           ) : null}
 
           {phase === "question" && question ? (
-            <div className="mx-auto max-w-3xl">
+            <div className={`${journey.testPanel} mx-auto max-w-3xl`}>
               <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-primary">{skillLabel}</span>
               {question.context ? <div className="mt-5 rounded-2xl border border-primary/15 bg-primary/5 p-5 text-base leading-7 text-foreground/80">{question.context}</div> : null}
               <h1 className="mt-6 font-heading text-3xl font-semibold leading-tight tracking-[-0.025em] sm:text-4xl">{question.prompt}</h1>
+              {question.audio_url ? <QuestionAudio key={question.id} question={question} onPlayed={() => setAudioPlayedFor(question.id)} /> : null}
               <div className="mt-7 grid gap-3">
                 {question.options.map((option) => {
                   const active = selectedOption === option.id;
@@ -433,12 +452,12 @@ export function PlacementTestPage() {
                 })}
               </div>
               {error ? <p role="alert" className="mt-4 rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{error}</p> : null}
-              <Button onClick={submitAnswer} disabled={!selectedOption || submitting} className="mt-6 h-12 rounded-full px-7 text-base">{submitting ? <Loader2 className="size-5 animate-spin" /> : <>Continuar <ArrowRight className="size-4" /></>}</Button>
+              <Button onClick={submitAnswer} disabled={!selectedOption || submitting || (question.skill === "listening" && audioPlayedFor !== question.id)} className="mt-6 h-12 rounded-full px-7 text-base">{submitting ? <Loader2 className="size-5 animate-spin" /> : <>Continuar <ArrowRight className="size-4" /></>}</Button>
             </div>
           ) : null}
 
           {phase === "result" && result && resultCopy ? (
-            <div className="mx-auto max-w-2xl rounded-3xl border border-border bg-card p-7 text-center shadow-[0_28px_80px_-52px_rgba(0,100,224,0.55)] sm:p-10">
+            <div className={`${journey.result} mx-auto max-w-2xl rounded-3xl border border-border bg-card p-7 text-center shadow-[0_28px_80px_-52px_rgba(0,100,224,0.55)] sm:p-10`}>
               <p className="text-sm font-semibold text-primary">Seu nível</p>
               <p className="mt-2 font-heading text-8xl font-semibold tracking-[-0.06em] text-primary">{result.level}</p>
               <h1 className="mt-2 font-heading text-3xl font-semibold">{resultCopy.title}</h1>
@@ -451,7 +470,7 @@ export function PlacementTestPage() {
             </div>
           ) : null}
         </section>
-      </main>
+      </div>
     </div>
   );
 }
