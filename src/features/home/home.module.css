@@ -528,6 +528,21 @@
 .root :global(.v-faq) {
   background: var(--v-cream);
 }
+.root :global(.v-matheus) {
+  background: #eef3fa;
+  border-top: 1px solid #dae3ed;
+}
+.root :global(.v-matheus-portrait) {
+  transform: rotate(4deg);
+}
+@media (min-width: 768px) {
+  .root :global(.v-matheus .v-lara-grid) {
+    grid-template-columns: 1fr clamp(210px, 24vw, 250px);
+  }
+  .root :global(.v-matheus-portrait) {
+    order: 2;
+  }
+}
 .root :global(.v-faq-grid) {
   display: grid;
   grid-template-columns: 0.75fr 1.25fr;

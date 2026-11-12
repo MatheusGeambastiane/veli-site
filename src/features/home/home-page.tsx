@@ -187,7 +187,7 @@ export function HomePage() {
           <div className="v-portrait">
             <Image
               src="/lara_canro_imagem.jpg"
-              alt="Lara Canro, fundadora e professora da Veli"
+              alt="Lara Canro, cofundadora e professora da Veli"
               fill
               sizes="(max-width: 767px) 150px, (max-width: 1023px) 210px, 250px"
               className="v-portrait-image"
@@ -199,7 +199,7 @@ export function HomePage() {
               <br className="v-desktop-break" /> quem vive os idiomas.
             </h2>
             <p className="v-lara-description">
-              Lara Canro é fundadora e professora da Veli. Sua proposta é
+              Lara Canro é cofundadora e professora da Veli. Sua proposta é
               aproximar o inglês e o francês da vida real: das músicas que você
               ouve, das culturas que descobre e das conversas que quer ter.
             </p>
@@ -217,6 +217,41 @@ export function HomePage() {
               Conheça a Lara no Instagram{" "}
               <MoveUpRight size={18} aria-hidden="true" />
             </a>
+          </div>
+        </div>
+      </section>
+
+      <section
+        className="v-section v-matheus"
+        id="matheus"
+        aria-labelledby="matheus-title"
+      >
+        <div className="v-container v-lara-grid">
+          <div className="v-portrait v-matheus-portrait">
+            <Image
+              src="/matheus_geambastiane_imagem.jpg"
+              alt="Matheus Geambastiane, cofundador da Veli"
+              fill
+              sizes="(max-width: 767px) 150px, (max-width: 875px) 210px, (max-width: 1041px) 24vw, 250px"
+              className="v-portrait-image"
+            />
+          </div>
+          <div>
+            <h2 id="matheus-title">
+              Uma escola criada por
+              <br className="v-desktop-break" /> quem ama descobrir o mundo.
+            </h2>
+            <p className="v-lara-description">
+              Matheus Geambastiane é cofundador da Veli, amante de idiomas e
+              apaixonado por viagens e novas culturas. Para ele, aprender uma
+              língua é abrir caminhos para conhecer o mundo e se conectar com
+              pessoas.
+            </p>
+            <p className="v-lara-signature">
+              Cada idioma, uma nova forma de descobrir o mundo.
+              <br />
+              <strong>Cada conversa, uma nova conexão.</strong>
+            </p>
           </div>
         </div>
       </section>
