@@ -762,8 +762,12 @@
     max-width: 470px;
   }
   .root :global(.v-hero-note) {
-    font-size: 10px;
+    font-size: 14px;
+    line-height: 1.6;
     gap: 7px;
+  }
+  .root :global(.v-hero-note svg) {
+    flex-shrink: 0;
   }
   .root :global(.v-cloud-right) {
     right: -450px;
@@ -857,9 +861,6 @@
   }
   .root :global(.v-actions .v-button) {
     width: 100%;
-  }
-  .root :global(.v-hero-note) {
-    font-size: 9px;
   }
   .root :global(.v-beyond) {
     font-size: 14.2vw;
