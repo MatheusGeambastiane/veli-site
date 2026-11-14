@@ -49,6 +49,7 @@ import { GoogleSignInButton } from "@/features/checkout/google-sign-in-button";
 import { ProfileCompletionForm } from "@/features/checkout/profile-completion-form";
 import { checkoutService } from "@/features/checkout/services/checkout-service";
 import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
+import { courseHasLevel, formatCourseLevels } from "@/shared/lib/course-levels";
 import {
   checkoutCartActionEvent,
   clearCheckoutCart,
@@ -371,23 +372,19 @@ function getOfferImage(offer: HotsiteCheckoutOffer) {
 }
 
 function getBillingLabel(option: HotsiteBillingOption) {
-  if (option.code === "UPFRONT_PIX") {
-    return "PIX à vista";
-  }
+  return isCreditCardOption(option) ? "Cartão" : "Pix";
+}
 
-  if (option.code === "MONTHLY_PIX") {
-    return "PIX mensal";
-  }
-
-  if (option.code === "UPFRONT_CREDIT_CARD") {
-    return "Cartão à vista";
-  }
-
-  if (option.code === "MONTHLY_CREDIT_CARD") {
-    return "Cartão mensal";
-  }
-
-  return option.code.replaceAll("_", " ");
+function PixIcon() {
+  return (
+    <Image
+      src="/icons/pix.png"
+      alt=""
+      width={24}
+      height={24}
+      className="size-6 object-contain"
+    />
+  );
 }
 
 function getBillingDescription(option: HotsiteBillingOption) {
@@ -949,7 +946,7 @@ export function CheckoutExperience({
           if (shouldApply) {
             placement.applied = true;
             const offer = response.data.results.find((item) =>
-              item.course.language.id === languageId && item.course.level.level.trim().toUpperCase() === placement.level
+              item.course.language.id === languageId && courseHasLevel(item.course, placement.level)
             );
             if (offer) {
               try {
@@ -1265,18 +1262,15 @@ export function CheckoutExperience({
     }
 
     setFormError(null);
+    setAuthNotice(null);
     setAuthOrigin("checkout");
     setOrderPayload(payload);
-    sessionStorage.setItem(checkoutSessionKey, JSON.stringify(payload));
-
-    if (hasAuthenticatedSession) {
-      setAuthLoading(true);
-      void createOrderAfterAuth()
-        .catch((error) => setFormError(getApiErrorMessage(error)))
-        .finally(() => setAuthLoading(false));
-      return;
+    try {
+      sessionStorage.setItem(checkoutSessionKey, JSON.stringify(payload));
+    } catch {
+      // A seleção em memória permite autenticar mesmo com armazenamento bloqueado.
     }
-
+    setAuthMode("login");
     setStep("account");
   };
 
@@ -1590,6 +1584,11 @@ export function CheckoutExperience({
     window.setTimeout(() => setCopyFeedback(false), 1800);
   };
 
+  const summaryTotal = activeCouponPreview?.amount_total ?? selectedBilling?.price ?? offerDetail?.price;
+  const summaryInstallments = selectedBilling && isCreditCardOption(selectedBilling) && selectedBilling.type === "one_time"
+    ? Math.max(1, ...selectedBilling.allowed_installments.filter((count) => Number.isInteger(count) && count > 0 && count <= 12))
+    : 1;
+
   const renderSelectionSummary = () => (
     <aside className={`${journey.summary} space-y-5 rounded-2xl border border-[#dce4ee] bg-white p-5 shadow-[0_18px_50px_rgba(23,43,77,0.08)] lg:sticky lg:top-6 lg:self-start`}>
       <div className="border-b border-border pb-5">
@@ -1605,12 +1604,15 @@ export function CheckoutExperience({
           </p>
         ) : null}
         <p className={`${activeCouponPreview ? "mt-0.5" : "mt-4"} text-3xl font-semibold tracking-[-0.04em] text-foreground`}>
-          {formatPrice(
-            activeCouponPreview?.amount_total ??
-              selectedBilling?.price ??
-              offerDetail?.price
-          )}
+          {summaryInstallments > 1
+            ? `Até ${summaryInstallments}x de ${formatPrice(Number(summaryTotal) / summaryInstallments)}`
+            : formatPrice(summaryTotal)}
         </p>
+        {summaryInstallments > 1 ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Valor total: {formatPrice(summaryTotal)}
+          </p>
+        ) : null}
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
           {selectedBilling
             ? getBillingDescription(selectedBilling)
@@ -1705,7 +1707,7 @@ export function CheckoutExperience({
         ) : (
           <CreditCard className="size-4" />
         )}
-        {hasAuthenticatedSession ? "Criar pedido" : "Continuar"}
+        Continuar
         <ArrowRight className="size-4" />
       </Button>
 
@@ -1748,6 +1750,7 @@ export function CheckoutExperience({
               <button
                 key={option.id}
                 type="button"
+                aria-pressed={selected}
                 onClick={() => setSelectedBillingCode(option.code)}
                 className={`rounded-xl border p-4 text-left transition ${
                   selected
@@ -1756,21 +1759,20 @@ export function CheckoutExperience({
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div>
+                  <div className="flex items-center gap-3">
+                    {isCreditCardOption(option) ? (
+                      <CreditCard className="size-6 text-primary" aria-hidden="true" />
+                    ) : (
+                      <PixIcon />
+                    )}
                     <p className="font-semibold text-foreground">
                       {getBillingLabel(option)}
-                    </p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {getBillingDescription(option)}
                     </p>
                   </div>
                   {selected ? (
                     <CheckCircle2 className="size-5 text-primary" />
                   ) : null}
                 </div>
-                <p className="mt-4 text-2xl font-semibold tracking-[-0.03em] text-foreground">
-                  {formatPrice(option.price)}
-                </p>
               </button>
             );
           })}
@@ -1986,7 +1988,7 @@ export function CheckoutExperience({
                                   {offer.course.name}
                                 </h2>
                                 <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                                  {offer.course.level.level}
+                                  {formatCourseLevels(offer.course)}
                                 </span>
                               </div>
                               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -2084,51 +2086,60 @@ export function CheckoutExperience({
                       >
                         {classChoiceMode === "class"
                           ? "Não quero esses horários"
-                          : "Quero escolher uma turma"}
+                          : "Quero escolher uma turma com horários já existentes"}
                       </button>
                     </div>
 
                     {classChoiceMode === "class" ? (
-                      <div className="grid gap-3">
-                        {offerDetail.student_classes.length > 0 ? (
-                          offerDetail.student_classes.map((studentClass) => (
-                            <button
-                              key={studentClass.id}
-                              type="button"
-                              onClick={() => setSelectedClassId(studentClass.id)}
-                              className={`rounded-xl border p-4 text-left transition ${
-                                selectedClassId === studentClass.id
-                                  ? "border-primary bg-accent shadow-sm"
-                                  : "border-border bg-white hover:border-primary/50"
-                              }`}
-                            >
-                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                                <div>
-                                  <p className="font-semibold text-foreground">
-                                    {studentClass.course.name}
-                                  </p>
-                                  <p className="mt-2 text-sm text-muted-foreground">
-                                    {studentClass.start_date} até{" "}
-                                    {studentClass.finish_date}
-                                  </p>
-                                  <p className="mt-1 text-sm text-muted-foreground">
-                                    Professor: {studentClass.teacher_full_name}
-                                  </p>
+                      <fieldset className="min-w-0">
+                        <legend className="sr-only">Turmas disponíveis</legend>
+                        <div
+                          className={`grid gap-3 p-1 ${
+                            offerDetail.student_classes.length > 1
+                              ? "max-h-96 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
+                              : ""
+                          }`}
+                        >
+                          {offerDetail.student_classes.length > 0 ? (
+                            offerDetail.student_classes.map((studentClass) => (
+                              <button
+                                key={studentClass.id}
+                                type="button"
+                                onClick={() => setSelectedClassId(studentClass.id)}
+                                className={`rounded-xl border p-4 text-left transition ${
+                                  selectedClassId === studentClass.id
+                                    ? "border-primary bg-accent shadow-sm"
+                                    : "border-border bg-white hover:border-primary/50"
+                                }`}
+                              >
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                  <div>
+                                    <p className="font-semibold text-foreground">
+                                      {studentClass.course.name}
+                                    </p>
+                                    <p className="mt-2 text-sm text-muted-foreground">
+                                      {studentClass.start_date} até{" "}
+                                      {studentClass.finish_date}
+                                    </p>
+                                    <p className="mt-1 text-sm text-muted-foreground">
+                                      Professor: {studentClass.teacher_full_name}
+                                    </p>
+                                  </div>
+                                  <div className="text-sm font-bold text-foreground sm:text-right">
+                                    <p>{formatTime(studentClass.time)}</p>
+                                    <p>{formatDays(studentClass.days_of_week)}</p>
+                                  </div>
                                 </div>
-                                <div className="text-sm text-muted-foreground sm:text-right">
-                                  <p>{formatTime(studentClass.time)}</p>
-                                  <p>{formatDays(studentClass.days_of_week)}</p>
-                                </div>
-                              </div>
-                            </button>
-                          ))
-                        ) : (
-                          <div className="rounded-[1.1rem] border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
-                            Nenhuma turma disponível. Selecione um turno de
-                            preferência.
-                          </div>
-                        )}
-                      </div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="rounded-[1.1rem] border border-dashed border-border bg-muted/40 p-4 text-sm text-muted-foreground">
+                              Nenhuma turma disponível. Selecione um turno de
+                              preferência.
+                            </div>
+                          )}
+                        </div>
+                      </fieldset>
                     ) : (
                       <div className="grid gap-3 sm:grid-cols-3">
                         {periodOptions.map((period) => {

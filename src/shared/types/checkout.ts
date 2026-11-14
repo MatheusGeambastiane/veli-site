@@ -45,14 +45,17 @@ export type HotsiteLanguage = {
   lang_description: string;
 };
 
+export type HotsiteCourseLevel = {
+  id: number;
+  level: string;
+};
+
 export type HotsiteCourse = {
   id: number;
   name: string;
   language: HotsiteLanguage;
-  level: {
-    id: number;
-    level: string;
-  };
+  level: HotsiteCourseLevel | null;
+  levels?: HotsiteCourseLevel[];
   description: string;
   is_active: boolean;
 };
