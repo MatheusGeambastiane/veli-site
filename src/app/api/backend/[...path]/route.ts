@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
+import { getBackendUrl } from "@/shared/lib/backend-url";
 
 const proxyPrefix = "/api/backend";
 const googleAuthPath = "/hotsite/auth/google/";
@@ -9,18 +10,6 @@ const loginPath =
 const accessTokenCookie = "veli_access_token";
 const refreshTokenCookie = "veli_refresh_token";
 const sessionAuthHeader = "x-veli-requires-auth";
-const fallbackBackendUrl =
-  process.env.NODE_ENV === "production"
-    ? "https://api.escolaveli.com"
-    : "http://localhost:8000";
-
-function getBackendUrl() {
-  return (
-    process.env.API_URL ||
-    process.env.NEXT_PUBLIC_API_URL ||
-    fallbackBackendUrl
-  ).replace(/\/$/, "");
-}
 
 function getTokenMaxAge(token: string) {
   try {
@@ -107,6 +96,7 @@ async function forwardRequest(request: NextRequest) {
   const upstreamPath = request.nextUrl.pathname.slice(proxyPrefix.length);
   const upstreamUrl = `${getBackendUrl()}${upstreamPath}${request.nextUrl.search}`;
   const headers = new Headers();
+  let usesCookieSession = false;
 
   for (const name of ["accept", "authorization", "content-type"]) {
     const value = request.headers.get(name);
@@ -124,6 +114,7 @@ async function forwardRequest(request: NextRequest) {
 
     if (accessToken) {
       headers.set("authorization", `Bearer ${accessToken}`);
+      usesCookieSession = true;
     }
   }
 
@@ -136,6 +127,12 @@ async function forwardRequest(request: NextRequest) {
     });
     const responseHeaders = new Headers();
     const contentType = response.headers.get("content-type");
+
+    if (usesCookieSession && response.status === 401) {
+      const cookieStore = await cookies();
+      cookieStore.delete(accessTokenCookie);
+      cookieStore.delete(refreshTokenCookie);
+    }
 
     if (isAuthenticationResponse(upstreamPath, request.method) && response.ok) {
       const data = (await response.json()) as Record<string, unknown>;
