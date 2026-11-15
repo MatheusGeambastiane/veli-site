@@ -1,0 +1,65 @@
+name: Daily quality checks
+on:
+  schedule:
+    - cron: '15 9 * * *' # 06:15 America/Bahia
+  workflow_dispatch:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: daily-tests-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: 'true'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: mkdir -p test-results
+      - run: npm run lint
+      - name: Unit and component tests
+        run: npm test | tee test-results/unit.log
+      - name: Production build
+        run: npm run build -- --webpack
+      - name: Browser regression (desktop and mobile)
+        run: npm run test:e2e
+      - name: Publish reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-test-reports
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
+  production-smoke:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:production
+      - name: Publish production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-smoke-reports
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
