@@ -15,10 +15,8 @@ import {
 import {
   ArrowLeft,
   ArrowRight,
-  CalendarDays,
   CheckCircle2,
   ChevronDown,
-  Clock3,
   Copy,
   CreditCard,
   Eye,
@@ -305,6 +303,41 @@ function formatDays(days: string[]) {
   return days.map((day) => dayLabels[day] ?? day).join(", ");
 }
 
+function getOfferSchedule(offer: HotsiteCheckoutOffer) {
+  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const labels: Record<string, string> = {
+    Mon: "Segunda-feira",
+    Tue: "Terça-feira",
+    Wed: "Quarta-feira",
+    Thu: "Quinta-feira",
+    Fri: "Sexta-feira",
+    Sat: "Sábado",
+    Sun: "Domingo",
+  };
+  const timesByDay = new Map<string, Set<string>>();
+
+  for (const studentClass of offer.student_classes) {
+    const days = studentClass.days_of_week.length
+      ? studentClass.days_of_week
+      : ["Dias a confirmar"];
+    for (const day of days) {
+      const times = timesByDay.get(day) ?? new Set<string>();
+      times.add(formatTime(studentClass.time));
+      timesByDay.set(day, times);
+    }
+  }
+
+  return Array.from(timesByDay, ([day, times]) => ({
+    day,
+    label: labels[day] ?? day,
+    times: Array.from(times).sort(),
+  })).sort((a, b) => {
+    const first = weekdays.indexOf(a.day);
+    const second = weekdays.indexOf(b.day);
+    return (first < 0 ? 7 : first) - (second < 0 ? 7 : second);
+  });
+}
+
 function formatExpirationDate(value: string | null) {
   if (!value) {
     return "A confirmar";
@@ -360,15 +393,11 @@ function getCourseName(offer?: HotsiteOffer | HotsiteCheckoutOffer | null) {
     return "Oferta selecionada";
   }
 
-  if ("course" in offer) {
-    return offer.course.name;
-  }
-
   return offer.name;
 }
 
 function getOfferImage(offer: HotsiteCheckoutOffer) {
-  return offer.course.language.lang_icon;
+  return offer.student_classes[0]?.course.language.lang_icon ?? "/globe.svg";
 }
 
 function getBillingLabel(option: HotsiteBillingOption) {
@@ -549,6 +578,7 @@ export function CheckoutExperience({
   const [classChoiceMode, setClassChoiceMode] =
     useState<ClassChoiceMode>("class");
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
+  const [selectedClassDay, setSelectedClassDay] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodValue | null>(null);
   const [selectedBillingCode, setSelectedBillingCode] = useState<string | null>(
     null
@@ -710,6 +740,20 @@ export function CheckoutExperience({
       ) ?? null,
     [offerDetail, selectedClassId]
   );
+
+  const availableClassDays = Object.keys(dayLabels).filter((day) =>
+    offerDetail?.student_classes.some((studentClass) => studentClass.days_of_week.includes(day))
+  );
+  const visibleClasses = offerDetail?.student_classes.filter((studentClass) =>
+    !selectedClassDay || studentClass.days_of_week.includes(selectedClassDay)
+  ) ?? [];
+
+  const handleClassDaySelect = (day: string | null) => {
+    setSelectedClassDay(day);
+    if (day && selectedClass && !selectedClass.days_of_week.includes(day)) {
+      setSelectedClassId(null);
+    }
+  };
 
   const canContinueToAccount =
     Boolean(selectedBilling) &&
@@ -946,7 +990,9 @@ export function CheckoutExperience({
           if (shouldApply) {
             placement.applied = true;
             const offer = response.data.results.find((item) =>
-              item.course.language.id === languageId && courseHasLevel(item.course, placement.level)
+              item.student_classes.some((studentClass) =>
+                studentClass.course.language.id === languageId && courseHasLevel(studentClass.course, placement.level)
+              )
             );
             if (offer) {
               try {
@@ -1016,10 +1062,9 @@ export function CheckoutExperience({
             null;
 
           setOfferDetail(response.data);
+          setSelectedClassDay(null);
           const matchingClass = response.data.student_classes.find((item) =>
-            selectedOfferSummary?.student_class_id
-              ? item.id === selectedOfferSummary.student_class_id
-              : item.course.id === selectedOfferSummary?.course.id
+            selectedOfferSummary?.student_classes.some((available) => available.id === item.id)
           );
           setSelectedClassId(matchingClass?.id ?? null);
           setPaymentBillingType(defaultBillingType);
@@ -1977,7 +2022,7 @@ export function CheckoutExperience({
                           <div className="flex gap-4">
                             <Image
                               src={getOfferImage(offer)}
-                              alt={offer.course.language.name}
+                              alt={selectedLanguage?.name ?? offer.name}
                               width={56}
                               height={56}
                               className="size-14 rounded-full border border-border object-cover"
@@ -1985,14 +2030,14 @@ export function CheckoutExperience({
                             <div>
                               <div className="flex flex-wrap items-center gap-2">
                                 <h2 className="font-heading text-2xl font-semibold tracking-[-0.03em] text-foreground">
-                                  {offer.course.name}
+                                  {offer.name}
                                 </h2>
                                 <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                                  {formatCourseLevels(offer.course)}
+                                  {Array.from(new Set(offer.student_classes.map((item) => formatCourseLevels(item.course)))).join(" · ")}
                                 </span>
                               </div>
                               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                                {offer.course.description}
+                                {Array.from(new Set(offer.student_classes.map((item) => item.course.description))).join(" ")}
                               </p>
                             </div>
                           </div>
@@ -2002,27 +2047,29 @@ export function CheckoutExperience({
                               A partir de
                             </p>
                             <p className="mt-1 font-heading text-2xl font-semibold text-foreground">
-                              {formatPrice(offer.price)}
+                              {offer.billing_options.some((option) => option.is_active && isCreditCardOption(option))
+                                ? `12x ${formatPrice(Number(offer.price) / 12)}`
+                                : formatPrice(offer.price)}
                             </p>
                           </div>
                         </div>
 
-                        <div className="mt-5 grid gap-3 text-sm text-muted-foreground sm:grid-cols-3">
-                          <div className="flex items-center gap-2">
-                            <CalendarDays className="size-4 text-primary" />
-                            <span>{formatDays(offer.days_of_week)}</span>
+                        <div className="mt-4 text-sm text-muted-foreground">
+                          <p className="mb-2 text-xs">Horários disponíveis</p>
+                          <div className="space-y-1">
+                            {getOfferSchedule(offer).map(({ day, label, times }) => (
+                              <div key={day} className="grid grid-cols-[7rem_1fr] gap-3">
+                                <span>{label}</span>
+                                <span className="tabular-nums text-foreground">{times.join(" · ")}</span>
+                              </div>
+                            ))}
                           </div>
-                          <div className="flex items-center gap-2">
-                            <Clock3 className="size-4 text-primary" />
-                            <span>{formatTime(offer.time)}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="size-4 text-primary" />
-                            <span>
-                              {offer.access_duration_days ?? "A confirmar"} dias
-                              de acesso
-                            </span>
-                          </div>
+                          <p className="mt-3 max-w-2xl text-xs leading-relaxed">
+                            Esses horários não se encaixam na sua rotina? Nos informe qual período faz mais sentido e se possível, criaremos mais turmas
+                          </p>
+                          <p className="mt-3 text-xs">
+                            {offer.access_duration_days ?? "A confirmar"} dias de acesso
+                          </p>
                         </div>
                       </button>
                     ))}
@@ -2082,6 +2129,7 @@ export function CheckoutExperience({
                               : offerDetail.student_classes[0]?.id ?? null
                           );
                           setSelectedPeriod(null);
+                          setSelectedClassDay(null);
                         }}
                       >
                         {classChoiceMode === "class"
@@ -2093,18 +2141,38 @@ export function CheckoutExperience({
                     {classChoiceMode === "class" ? (
                       <fieldset className="min-w-0">
                         <legend className="sr-only">Turmas disponíveis</legend>
+                        {availableClassDays.length > 0 ? (
+                          <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar turmas por dia da semana">
+                            {[null, ...availableClassDays].map((day) => (
+                              <button
+                                key={day ?? "all"}
+                                type="button"
+                                aria-pressed={selectedClassDay === day}
+                                onClick={() => handleClassDaySelect(day)}
+                                className={`rounded-full px-3 py-1.5 text-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                                  selectedClassDay === day
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-muted text-muted-foreground hover:text-foreground"
+                                }`}
+                              >
+                                {day ? dayLabels[day] : "Todos"}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
                         <div
                           className={`grid gap-3 p-1 ${
-                            offerDetail.student_classes.length > 1
+                            visibleClasses.length > 1
                               ? "max-h-96 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
                               : ""
                           }`}
                         >
-                          {offerDetail.student_classes.length > 0 ? (
-                            offerDetail.student_classes.map((studentClass) => (
+                          {visibleClasses.length > 0 ? (
+                            visibleClasses.map((studentClass) => (
                               <button
                                 key={studentClass.id}
                                 type="button"
+                                aria-pressed={selectedClassId === studentClass.id}
                                 onClick={() => setSelectedClassId(studentClass.id)}
                                 className={`rounded-xl border p-4 text-left transition ${
                                   selectedClassId === studentClass.id

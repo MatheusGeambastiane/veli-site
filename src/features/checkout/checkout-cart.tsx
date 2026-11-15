@@ -63,8 +63,8 @@ export function CheckoutCart({
             <div className="overflow-hidden rounded-[1.4rem] border border-white/10 bg-white text-foreground shadow-2xl shadow-black/10">
               <div className="flex items-start gap-4 p-5">
                 <Image
-                  src={item.offer.course.language.lang_icon}
-                  alt={item.offer.course.language.name}
+                  src={item.offer.student_classes[0].course.language.lang_icon}
+                  alt={item.offer.student_classes[0].course.language.name}
                   width={56}
                   height={56}
                   className="size-14 rounded-full border border-border object-cover"
@@ -74,10 +74,10 @@ export function CheckoutCart({
                     {item.language.name}
                   </p>
                   <h2 className="mt-1 font-heading text-xl font-semibold tracking-[-0.02em]">
-                    {item.offer.course.name}
+                    {item.offer.name}
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Níveis: {formatCourseLevels(item.offer.course)}
+                    Níveis: {Array.from(new Set(item.offer.student_classes.map((studentClass) => formatCourseLevels(studentClass.course)))).join(" · ")}
                   </p>
                 </div>
               </div>

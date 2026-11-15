@@ -119,7 +119,7 @@ export type HotsiteOffersResponse = {
   count: number;
   next: string | null;
   previous: string | null;
-  results: HotsiteOffer[];
+  results: HotsiteCheckoutOffer[];
 };
 
 export type HotsiteCheckoutLanguage = {
@@ -135,17 +135,10 @@ export type HotsiteLanguagesResponse = {
   results: HotsiteCheckoutLanguage[];
 };
 
-export type HotsiteCheckoutOffer = {
-  id: number;
-  student_class_id?: number;
-  price: string;
-  access_duration_days: number | null;
-  days_of_week: string[];
-  time: string;
-  start_date: string;
-  finish_date: string;
-  course: HotsiteCourse;
-};
+export type HotsiteCheckoutOffer = Pick<
+  HotsiteOffer,
+  "id" | "name" | "price" | "access_duration_days" | "student_classes" | "billing_options"
+>;
 
 export type HotsiteCheckoutOffersResponse = {
   count: number;

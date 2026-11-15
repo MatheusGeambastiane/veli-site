@@ -35,8 +35,11 @@ export function readCheckoutCart() {
       item.version !== 1 ||
       typeof item.language?.id !== "number" ||
       typeof item.offer?.id !== "number" ||
-      typeof item.offer?.course?.name !== "string" ||
-      typeof item.offer?.course?.language?.lang_icon !== "string"
+      typeof item.offer?.name !== "string" ||
+      !Array.isArray(item.offer?.student_classes) ||
+      !item.offer.student_classes.length ||
+      !Array.isArray(item.offer?.billing_options) ||
+      typeof item.offer.student_classes[0]?.course?.language?.lang_icon !== "string"
     ) {
       window.localStorage.removeItem(checkoutCartKey);
       return null;
