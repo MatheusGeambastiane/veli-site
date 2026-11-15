@@ -397,7 +397,7 @@ function getCourseName(offer?: HotsiteOffer | HotsiteCheckoutOffer | null) {
 }
 
 function getOfferImage(offer: HotsiteCheckoutOffer) {
-  return offer.student_classes[0]?.course.language.lang_icon ?? "/globe.svg";
+  return offer.student_classes?.[0]?.course.language.lang_icon ?? "/globe.svg";
 }
 
 function getBillingLabel(option: HotsiteBillingOption) {

@@ -1,3 +1,4 @@
+import { normalizeOffers } from "./normalize-offers";
 import { publicEnv } from "@/shared/lib/env";
 import { httpClient } from "@/shared/lib/http-client";
 import type {
@@ -59,17 +60,27 @@ export const checkoutService = {
     return httpClient.get<HotsiteLanguagesResponse>("/hotsite/languages/");
   },
 
-  getOffersByLanguage(
+  async getOffersByLanguage(
     languageId: number | string,
     level?: string
   ): Promise<ApiResponse<HotsiteCheckoutOffersResponse>> {
-    return httpClient.get<HotsiteCheckoutOffersResponse>(
+    const response = await httpClient.get<HotsiteCheckoutOffersResponse>(
       `/hotsite/offers/?language=${encodeURIComponent(String(languageId))}${level ? `&level=${encodeURIComponent(level)}` : ""}`
     );
+    const results = await normalizeOffers(response.data.results, async (id) => {
+      const detail = await checkoutService.getOffer(id);
+      return detail.data;
+    }, { languageId, level });
+    return { ...response, data: { ...response.data, results } };
   },
 
-  getOffers(): Promise<ApiResponse<HotsiteOffersResponse>> {
-    return httpClient.get<HotsiteOffersResponse>("/hotsite/offers/");
+  async getOffers(): Promise<ApiResponse<HotsiteOffersResponse>> {
+    const response = await httpClient.get<HotsiteOffersResponse>("/hotsite/offers/");
+    const results = await normalizeOffers(response.data.results, async (id) => {
+      const detail = await checkoutService.getOffer(id);
+      return detail.data;
+    });
+    return { ...response, data: { ...response.data, results } };
   },
 
   getOffer(offerId: number | string): Promise<ApiResponse<HotsiteOffer>> {
