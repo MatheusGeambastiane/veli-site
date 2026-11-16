@@ -15,7 +15,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import type { CheckoutCartItem } from "@/shared/lib/checkout-cart";
-import { formatCourseLevels } from "@/shared/lib/course-levels";
+import { formatOfferLevels } from "@/shared/lib/course-levels";
 
 type CheckoutCartProps = {
   open: boolean;
@@ -77,7 +77,7 @@ export function CheckoutCart({
                     {item.offer.name}
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Níveis: {Array.from(new Set(item.offer.student_classes.map((studentClass) => formatCourseLevels(studentClass.course)))).join(" · ")}
+                    Níveis: {formatOfferLevels(item.offer)}
                   </p>
                 </div>
               </div>

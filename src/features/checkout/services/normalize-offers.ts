@@ -2,6 +2,19 @@ import type { HotsiteCheckoutOffer } from "@/shared/types";
 
 type OfferSummary = Partial<HotsiteCheckoutOffer> & { id: number };
 
+const levelOrder = ["A1", "A2", "B1", "B2", "C1", "C2"];
+
+function getOfferLevelOrder(offer: HotsiteCheckoutOffer): number {
+  const ranks = offer.student_classes.flatMap(({ course }) => {
+    const levels = course.levels?.length ? course.levels : course.level ? [course.level] : [];
+    return levels.map(({ level }) => {
+      const rank = levelOrder.indexOf(level.trim().toUpperCase());
+      return rank === -1 ? levelOrder.length : rank;
+    });
+  });
+  return Math.min(levelOrder.length, ...ranks);
+}
+
 function isCompleteOffer(offer: OfferSummary): offer is HotsiteCheckoutOffer {
   return typeof offer.name === "string"
     && Array.isArray(offer.student_classes)
@@ -39,5 +52,7 @@ export async function normalizeOffers(
       }),
     };
   }));
-  return offers.filter((offer) => offer.student_classes.length > 0);
+  return offers
+    .filter((offer) => offer.student_classes.length > 0)
+    .sort((a, b) => getOfferLevelOrder(a) - getOfferLevelOrder(b));
 }

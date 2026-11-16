@@ -12,12 +12,12 @@ const billing = [
 const offer = { id: 1, name: 'Plano anual teste', price: '1200.00', access_duration_days: 365, student_classes: classes, billing_options: billing };
 const paginated = (results: unknown[]) => ({ count: results.length, next: null, previous: null, results });
 
-async function catalog(page: Page, options: { legacy?: boolean; pixOnly?: boolean; empty?: boolean; failOnce?: boolean } = {}) {
+async function catalog(page: Page, options: { legacy?: boolean; pixOnly?: boolean; empty?: boolean; failOnce?: boolean; description?: string } = {}) {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   let requests = 0;
   let details = 0;
-  const current = { ...offer, billing_options: options.pixOnly ? [billing[1]] : billing };
+  const current = { ...offer, description: options.description, billing_options: options.pixOnly ? [billing[1]] : billing };
   await page.route('**/*', async route => {
     const url = new URL(route.request().url());
     if (url.hostname !== '127.0.0.1') return route.abort();
@@ -50,7 +50,7 @@ test('P0 idioma → oferta agrupada → cartão → identificação', async ({ p
   await expect(offerCard(page)).toContainText('Sábado');
   await offerCard(page).click();
   await expect(page.getByRole('heading', { name: 'Escolha a turma' })).toBeVisible();
-  await page.getByRole('button', { name: 'Cartão', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Cartão', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await page.getByRole('button', { name: 'Continuar', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Finalize sua matrícula' })).toBeVisible();
   expect(state.errors).toEqual([]);
@@ -62,6 +62,22 @@ test('P0 API antiga não derruba o checkout nem duplica ofertas', async ({ page 
   await expect(offerCard(page)).toContainText('Sábado');
   expect(state.details()).toBe(1);
   expect(state.errors).toEqual([]);
+});
+
+test('Pix mostra preço com desconto e economia em reais e percentual ao selecionar', async ({ page }) => {
+  await catalog(page);
+  await offerCard(page).click();
+  const pix = page.getByRole('button', { name: /^Pix / });
+  await expect(pix).toContainText(/R\$\s*1\.140,00/);
+  await expect(pix).toContainText('5% de desconto no Pix');
+  await expect(pix).toHaveAttribute('aria-pressed', 'false');
+  await pix.click();
+  await expect(pix).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('status')).toContainText(/economiza R\$\s*60,00 \(5%\)/);
+  await expect(page.locator('aside')).toContainText(/R\$\s*1\.140,00/);
+  await page.getByRole('button', { name: 'Cartão', exact: true }).click();
+  await expect(page.getByText(/No Pix, você economiza/)).toHaveCount(0);
+  await expect(page.locator('aside')).toContainText(/Valor total: R\$\s*1\.200,00/);
 });
 
 test('P0 oferta somente Pix não anuncia parcelamento', async ({ page }) => {
@@ -107,4 +123,26 @@ test('P2 catálogo vazio apresenta mensagem e permite trocar idioma', async ({ p
   await expect(page.getByText(/Não encontramos cursos de/)).toBeVisible();
   await page.getByRole('button', { name: 'Trocar idioma' }).click();
   await expect(page.getByRole('button', { name: /Inglês/ })).toBeVisible();
+});
+
+
+test('Descrição da oferta aparece em negrito abaixo do curso', async ({ page }) => {
+  const description = 'Material complementar incluído.\nConversação semanal.';
+  await catalog(page, { description });
+  const card = offerCard(page);
+  const offerDescription = card.getByText(description);
+  await expect(offerDescription).toBeVisible();
+  await expect(offerDescription).toHaveCSS('font-weight', '700');
+  const courseBox = await card.getByText(course.description, { exact: true }).boundingBox();
+  const offerBox = await offerDescription.boundingBox();
+  expect(courseBox).not.toBeNull();
+  expect(offerBox).not.toBeNull();
+  expect(offerBox!.y).toBeGreaterThan(courseBox!.y);
+  await expect(card).not.toContainText('Aulas gravadas e uma aula ao vivo de 60 minutos');
+});
+
+test('Oferta sem descrição não mostra o texto padrão', async ({ page }) => {
+  await catalog(page);
+  await expect(offerCard(page)).toBeVisible();
+  await expect(offerCard(page)).not.toContainText('Aulas gravadas e uma aula ao vivo de 60 minutos');
 });

@@ -96,6 +96,7 @@ export type HotsiteBillingOption = {
 };
 
 export type HotsiteOffer = {
+  description?: string;
   id: number;
   name: string;
   student_classes: HotsiteStudentClass[];
@@ -137,7 +138,7 @@ export type HotsiteLanguagesResponse = {
 
 export type HotsiteCheckoutOffer = Pick<
   HotsiteOffer,
-  "id" | "name" | "price" | "access_duration_days" | "student_classes" | "billing_options"
+  "id" | "name" | "description" | "price" | "access_duration_days" | "student_classes" | "billing_options"
 >;
 
 export type HotsiteCheckoutOffersResponse = {

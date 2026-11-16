@@ -43,11 +43,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CreditCardPaymentForm } from "@/features/checkout/credit-card-payment-form";
+import { getDefaultBillingOption, getPixSavings, isCreditCardOption } from "@/features/checkout/billing-options";
 import { GoogleSignInButton } from "@/features/checkout/google-sign-in-button";
 import { ProfileCompletionForm } from "@/features/checkout/profile-completion-form";
 import { checkoutService } from "@/features/checkout/services/checkout-service";
 import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
-import { courseHasLevel, formatCourseLevels } from "@/shared/lib/course-levels";
+import { courseHasLevel, formatOfferLevels } from "@/shared/lib/course-levels";
 import {
   checkoutCartActionEvent,
   clearCheckoutCart,
@@ -424,14 +425,6 @@ function getBillingDescription(option: HotsiteBillingOption) {
   }
 
   return option.type === "recurring" ? "Cobrança mensal" : "Pagamento único";
-}
-
-function isCreditCardOption(option?: HotsiteBillingOption | null) {
-  return Boolean(
-    option &&
-      (option.billing_method === "credit_card" ||
-        ["MONTHLY_CREDIT_CARD", "UPFRONT_CREDIT_CARD"].includes(option.code))
-  );
 }
 
 function getPaymentValue(order: HotsiteOrderResponse | null) {
@@ -1046,20 +1039,8 @@ export function CheckoutExperience({
           const activeOptions = response.data.billing_options.filter(
             (option) => option.is_active
           );
-          const defaultBillingType = activeOptions.some(
-            (option) => option.type === "one_time"
-          )
-            ? "one_time"
-            : "recurring";
-          const defaultBillingOption =
-            activeOptions.find(
-              (option) =>
-                option.type === defaultBillingType &&
-                option.billing_method === "pix"
-            ) ??
-            activeOptions.find((option) => option.type === defaultBillingType) ??
-            activeOptions[0] ??
-            null;
+          const defaultBillingOption = getDefaultBillingOption(activeOptions);
+          const defaultBillingType = defaultBillingOption?.type ?? "one_time";
 
           setOfferDetail(response.data);
           setSelectedClassDay(null);
@@ -1630,6 +1611,7 @@ export function CheckoutExperience({
   };
 
   const summaryTotal = activeCouponPreview?.amount_total ?? selectedBilling?.price ?? offerDetail?.price;
+  const pixSavings = getPixSavings(selectedBilling, activeBillingOptions);
   const summaryInstallments = selectedBilling && isCreditCardOption(selectedBilling) && selectedBilling.type === "one_time"
     ? Math.max(1, ...selectedBilling.allowed_installments.filter((count) => Number.isInteger(count) && count > 0 && count <= 12))
     : 1;
@@ -1667,6 +1649,11 @@ export function CheckoutExperience({
           <p className="mt-2 text-xs font-semibold text-emerald-700">
             Cupom {activeCouponPreview.coupon_code} aplicado · economia de{" "}
             {formatPrice(activeCouponPreview.discount_amount)}
+          </p>
+        ) : null}
+        {pixSavings ? (
+          <p role="status" className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
+            No Pix, você economiza {formatPrice(pixSavings.amount)} ({pixSavings.percentage.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%) em relação ao cartão.
           </p>
         ) : null}
       </div>
@@ -1772,10 +1759,7 @@ export function CheckoutExperience({
   const handleBillingTypeSelect = (billingType: PaymentBillingType) => {
     const nextOptions =
       billingType === "recurring" ? monthlyOptions : upfrontOptions;
-    const nextSelectedOption =
-      nextOptions.find((option) => option.billing_method === "pix") ??
-      nextOptions[0] ??
-      null;
+    const nextSelectedOption = getDefaultBillingOption(nextOptions);
 
     setPaymentBillingType(billingType);
     setSelectedBillingCode(nextSelectedOption?.code ?? null);
@@ -1790,6 +1774,7 @@ export function CheckoutExperience({
         <div className="grid gap-3 sm:grid-cols-2">
           {options.map((option) => {
             const selected = selectedBillingCode === option.code;
+            const savings = getPixSavings(option, activeBillingOptions);
 
             return (
               <button
@@ -1818,6 +1803,16 @@ export function CheckoutExperience({
                     <CheckCircle2 className="size-5 text-primary" />
                   ) : null}
                 </div>
+                {option.billing_method === "pix" ? (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {formatPrice(option.price)}{option.type === "recurring" ? " por cobrança" : " à vista"}
+                    {savings ? (
+                      <span className="mt-1 block font-semibold text-emerald-700">
+                        {savings.percentage.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% de desconto no Pix
+                      </span>
+                    ) : null}
+                  </p>
+                ) : null}
               </button>
             );
           })}
@@ -2033,12 +2028,17 @@ export function CheckoutExperience({
                                   {offer.name}
                                 </h2>
                                 <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                                  {Array.from(new Set(offer.student_classes.map((item) => formatCourseLevels(item.course)))).join(" · ")}
+                                  {formatOfferLevels(offer)}
                                 </span>
                               </div>
                               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
                                 {Array.from(new Set(offer.student_classes.map((item) => item.course.description))).join(" ")}
                               </p>
+                              {offer.description?.trim() ? (
+                                <p className="mt-2 max-w-2xl whitespace-pre-wrap text-sm font-bold leading-6 text-foreground">
+                                  {offer.description}
+                                </p>
+                              ) : null}
                             </div>
                           </div>
 
@@ -2055,6 +2055,9 @@ export function CheckoutExperience({
                         </div>
 
                         <div className="mt-4 text-sm text-muted-foreground">
+                          <p className="mb-4 mt-1 text-sm leading-6">
+                            Escolha, na próxima etapa, o horário que melhor se encaixa na sua rotina.
+                          </p>
                           <p className="mb-2 text-xs">Horários disponíveis</p>
                           <div className="space-y-1">
                             {getOfferSchedule(offer).map(({ day, label, times }) => (
@@ -2111,11 +2114,16 @@ export function CheckoutExperience({
                 <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
                   <div className="space-y-9">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <h2 className="text-xl font-semibold tracking-[-0.025em] text-foreground">
-                        {classChoiceMode === "class"
-                          ? "Escolha a turma"
-                          : "Escolha o turno"}
-                      </h2>
+                      <div>
+                        <h2 className="text-xl font-semibold tracking-[-0.025em] text-foreground">
+                          {classChoiceMode === "class"
+                            ? "Escolha a turma"
+                            : "Escolha o turno"}
+                        </h2>
+                        <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
+                          Além das aulas gravadas, você terá uma aula ao vivo de 60 minutos por semana com professor, em uma turma de até 10 pessoas.
+                        </p>
+                      </div>
                       <button
                         type="button"
                         className="text-left text-sm font-semibold text-primary underline-offset-4 hover:underline sm:text-right"
