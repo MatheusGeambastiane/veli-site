@@ -258,7 +258,10 @@ export function LoginScreen({ nextPath }: { nextPath?: string }) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="login-password">Senha</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="login-password">Senha</Label>
+                  <Link href="/recuperar-senha" className="text-sm text-primary underline">Esqueceu a senha?</Link>
+                </div>
                 <div className="relative">
                   <Input
                     id="login-password"

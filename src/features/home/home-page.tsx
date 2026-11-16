@@ -252,6 +252,15 @@ export function HomePage() {
               <br />
               <strong>Cada conversa, uma nova conexão.</strong>
             </p>
+            <a
+              href="https://www.instagram.com/matheusgeambastiane/"
+              target="_blank"
+              rel="noreferrer"
+              className="v-text-link"
+            >
+              Conheça o Matheus no Instagram{" "}
+              <MoveUpRight size={18} aria-hidden="true" />
+            </a>
           </div>
         </div>
       </section>
