@@ -17,6 +17,7 @@ import type {
   HotsitePaymentStatusResponse,
   HotsiteStartCardPaymentPayload,
   PaymentGatewayConfig,
+  HotsiteStartPaymentResponse,
   UpdateHotsiteUserPayload,
   ViaCepResponse,
 } from "@/shared/types";
@@ -144,6 +145,19 @@ export const checkoutService = {
     );
   },
 
+  getOrder(
+    orderId: number | string,
+    token?: string
+  ): Promise<ApiResponse<HotsiteOrderResponse>> {
+    return httpClient.get<HotsiteOrderResponse>(
+      `/hotsite/orders/${encodeURIComponent(String(orderId))}/`,
+      {
+        requiresAuth: true,
+        tokenProvider: token ? () => token : undefined,
+      }
+    );
+  },
+
   validateCoupon(
     offerId: number,
     payload: { coupon_code: string; billing_option_code: string }
@@ -158,8 +172,8 @@ export const checkoutService = {
     orderId: number | string,
     payload: HotsiteStartCardPaymentPayload,
     token?: string
-  ): Promise<ApiResponse<unknown>> {
-    return httpClient.post<unknown, HotsiteStartCardPaymentPayload>(
+  ): Promise<ApiResponse<HotsiteStartPaymentResponse>> {
+    return httpClient.post<HotsiteStartPaymentResponse, HotsiteStartCardPaymentPayload>(
       `/hotsite/orders/${encodeURIComponent(String(orderId))}/start-payment/`,
       payload,
       {

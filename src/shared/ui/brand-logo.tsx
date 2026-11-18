@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 
 type BrandLogoProps = {
@@ -8,14 +7,25 @@ type BrandLogoProps = {
 export function BrandLogo({ href = "/" }: BrandLogoProps) {
   return (
     <Link href={href} className="inline-flex items-center">
-      <Image
-        src="/Veli_logo azul medio.png"
-        alt="Veli"
-        width={168}
-        height={48}
-        priority
-        className="h-10 w-auto sm:h-11"
-      />
+      <picture>
+        <source
+          type="image/webp"
+          srcSet="/images/generated/veli-logo-160.webp 160w, /images/generated/veli-logo-320.webp 320w"
+          sizes="143px"
+        />
+        <img
+          src="/images/generated/veli-logo-320.png"
+          srcSet="/images/generated/veli-logo-160.png 160w, /images/generated/veli-logo-320.png 320w"
+          sizes="143px"
+          alt="Veli"
+          width={168}
+          height={48}
+          loading="eager"
+          decoding="async"
+          fetchPriority="high"
+          className="h-10 w-auto sm:h-11"
+        />
+      </picture>
     </Link>
   );
 }

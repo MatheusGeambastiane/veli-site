@@ -4,13 +4,13 @@ import Link from "next/link";
 import styles from "@/shared/styles/veli-account.module.css";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ArrowUpRight, ChevronLeft, ChevronRight, Loader2, ReceiptText, RefreshCw, UserRound } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, Loader2, ReceiptText, RefreshCw, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { checkoutService } from "@/features/checkout/services/checkout-service";
 import { authSessionUpdatedEvent, notifyAuthSessionChanged } from "@/shared/lib/auth-session";
 import { publicEnv } from "@/shared/lib/env";
 import type { HotsiteAuthenticatedUser } from "@/shared/types";
-import { accountError, getAccountOrders, isSessionExpired, type AccountOrders } from "./account-service";
+import { accountError, canContinueOrderPayment, getAccountOrders, isSessionExpired, type AccountOrders } from "./account-service";
 import { ProfilePanel } from "./profile-panel";
 
 const labels: Record<string, string> = {
@@ -128,6 +128,17 @@ export function AccountArea({ section }: { section: "orders" | "profile" }) {
                       <div><dt className="text-xs text-muted-foreground">Forma de pagamento</dt><dd className="mt-2 text-sm">{order.payment_type === "pix" ? "Pix" : order.payment_type === "debit" ? "Débito" : "Cartão de crédito"}{order.payment_mode === "monthly" ? " · Mensal" : (order.payment_installments ?? 1) > 1 ? ` · ${order.payment_installments}x` : " · À vista"}</dd></div>
                       <div><dt className="text-xs text-muted-foreground">Último pagamento</dt><dd className="mt-2"><Status value={order.payment_status} /></dd></div>
                     </dl>
+                    {canContinueOrderPayment(order) ? (
+                      <div className="mt-5 flex justify-end border-t border-border pt-5">
+                        <Link
+                          href={`/checkout?order=${encodeURIComponent(String(order.order_id))}`}
+                          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+                        >
+                          Seguir para o pagamento
+                          <ArrowRight className="size-4" aria-hidden="true" />
+                        </Link>
+                      </div>
+                    ) : null}
                   </article>)}
                 </div>}
                 {orders.previous || orders.next ? <nav aria-label="Páginas de pedidos" className="mt-6 flex items-center justify-between gap-3">

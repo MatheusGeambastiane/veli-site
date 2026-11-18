@@ -13,13 +13,25 @@ export const metadata: Metadata = {
   description: "Escolha seu curso, horário e conclua sua matrícula na Veli.",
 };
 
-export default function CheckoutPage() {
+type CheckoutPageProps = {
+  searchParams: Promise<{ order?: string | string[] }>;
+};
+
+export default async function CheckoutPage({ searchParams }: CheckoutPageProps) {
+  const params = await searchParams;
+  const rawOrderId = Array.isArray(params.order) ? params.order[0] : params.order;
+  const parsedOrderId = Number(rawOrderId);
+  const resumeOrderId =
+    Number.isSafeInteger(parsedOrderId) && parsedOrderId > 0
+      ? parsedOrderId
+      : undefined;
+
   return (
     <div className={`${styles.theme} ${styles.page} ${veliFontClassName}`}>
       <JourneyHeader label="Sua matrícula" secure />
       <main id="conteudo">
         <JourneyBanner />
-        <CheckoutExperience mode="page" />
+        <CheckoutExperience mode="page" resumeOrderId={resumeOrderId} />
       </main>
       <JourneyFooter />
     </div>

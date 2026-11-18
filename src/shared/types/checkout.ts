@@ -152,6 +152,9 @@ export type CreateHotsiteUserPayload = {
   first_name: string;
   last_name: string;
   cpf: string;
+  passport: string;
+  is_foreign_without_cpf: boolean;
+  is_brazil_resident: boolean;
   email: string;
   password: string;
   phone: string;
@@ -171,6 +174,9 @@ export type HotsiteAuthenticatedUser = {
   email?: string;
   phone?: string;
   tax_id?: string | null;
+  passport?: string;
+  is_foreign_without_cpf?: boolean;
+  is_brazil_resident?: boolean;
   cep?: string;
   zip_code?: string;
   city?: string;
@@ -207,6 +213,9 @@ export type UpdateHotsiteUserPayload = {
   first_name: string;
   last_name: string;
   cpf: string;
+  passport: string;
+  is_foreign_without_cpf: boolean;
+  is_brazil_resident: boolean;
   phone: string;
   cep: string;
   address: string;
@@ -245,6 +254,7 @@ export type HotsiteCreditCard = {
 
 export type HotsiteStartCardPaymentPayload = {
   accept_contract: true;
+  gateway_choice?: "abacatepay" | "asaas" | "stripe";
   holder_is_customer: boolean;
   credit_card?: HotsiteCreditCard;
   card_token?: string;
@@ -260,11 +270,26 @@ export type HotsiteStartCardPaymentPayload = {
 };
 
 export type PaymentGatewayConfig = {
-  gateway: "abacatepay" | "asaas";
+  gateway: "abacatepay" | "asaas" | "stripe";
   methods: Array<"pix" | "credit_card">;
   capabilities: string[];
   public_key?: string;
   card_script_url?: string;
+  gateways?: Array<{
+    gateway: "abacatepay" | "asaas" | "stripe";
+    methods: Array<"pix" | "credit_card">;
+    capabilities: string[];
+    is_default: boolean;
+    checkout_mode: "embedded" | "hosted";
+  }>;
+};
+
+export type HotsiteStartPaymentResponse = {
+  order_id: number;
+  checkout_status: string;
+  gateway?: "abacatepay" | "asaas" | "stripe";
+  checkout_url?: string;
+  checkout_session_id?: string;
 };
 
 export type HotsiteOrderContract = {
@@ -284,6 +309,9 @@ export type HotsiteOrderResponse = {
   amount_original?: string;
   discount_amount?: string;
   amount_due?: string;
+  payment_mode?: string;
+  payment_type?: string;
+  payment_installments?: number | null;
   coupon_code?: string | null;
   pix_qr_code_base64?: string;
   pix_qr_code?: string;

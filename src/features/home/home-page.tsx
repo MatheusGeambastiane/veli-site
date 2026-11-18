@@ -11,6 +11,42 @@ import {
 } from "lucide-react";
 import { homeFaqs, homeLanguages, homeSteps } from "./home-content";
 
+type StaticPortraitProps = {
+  alt: string;
+  name: "lara-canro" | "matheus-geambastiane";
+  sizes: string;
+};
+
+function StaticPortrait({ alt, name, sizes }: StaticPortraitProps) {
+  const basePath = `/images/generated/${name}`;
+
+  return (
+    <picture>
+      <source
+        type="image/avif"
+        srcSet={`${basePath}-150.avif 150w, ${basePath}-300.avif 300w, ${basePath}-500.avif 500w`}
+        sizes={sizes}
+      />
+      <source
+        type="image/webp"
+        srcSet={`${basePath}-150.webp 150w, ${basePath}-300.webp 300w, ${basePath}-500.webp 500w`}
+        sizes={sizes}
+      />
+      <img
+        src={`${basePath}-500.jpg`}
+        srcSet={`${basePath}-150.jpg 150w, ${basePath}-300.jpg 300w, ${basePath}-500.jpg 500w`}
+        sizes={sizes}
+        alt={alt}
+        width={500}
+        height={625}
+        loading="lazy"
+        decoding="async"
+        className="v-portrait-image"
+      />
+    </picture>
+  );
+}
+
 function HomeActions() {
   return (
     <div className="v-actions">
@@ -185,12 +221,10 @@ export function HomePage() {
       >
         <div className="v-container v-lara-grid">
           <div className="v-portrait">
-            <Image
-              src="/lara_canro_imagem.jpg"
+            <StaticPortrait
+              name="lara-canro"
               alt="Lara Canro, cofundadora e professora da Veli"
-              fill
               sizes="(max-width: 767px) 150px, (max-width: 1023px) 210px, 250px"
-              className="v-portrait-image"
             />
           </div>
           <div>
@@ -228,12 +262,10 @@ export function HomePage() {
       >
         <div className="v-container v-lara-grid">
           <div className="v-portrait v-matheus-portrait">
-            <Image
-              src="/matheus_geambastiane_imagem.jpg"
+            <StaticPortrait
+              name="matheus-geambastiane"
               alt="Matheus Geambastiane, cofundador da Veli"
-              fill
               sizes="(max-width: 767px) 150px, (max-width: 875px) 210px, (max-width: 1041px) 24vw, 250px"
-              className="v-portrait-image"
             />
           </div>
           <div>

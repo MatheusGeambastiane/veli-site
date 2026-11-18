@@ -22,6 +22,38 @@ export type AccountOrders = {
   results: AccountOrder[];
 };
 
+const pendingPaymentStatuses = new Set([
+  "pending",
+  "waiting_payment",
+  "pending_payment",
+  "pending_contract",
+  "draft",
+  "created",
+]);
+
+const terminalPaymentStatuses = new Set([
+  "paid",
+  "active",
+  "confirmed",
+  "expired",
+  "canceled",
+  "cancelled",
+  "refunded",
+  "disputed",
+  "chargeback",
+]);
+
+export function canContinueOrderPayment(order: AccountOrder) {
+  const statuses = [order.status, order.checkout_status, order.payment_status]
+    .filter(Boolean)
+    .map((status) => status.toLowerCase());
+
+  return (
+    !statuses.some((status) => terminalPaymentStatuses.has(status)) &&
+    statuses.some((status) => pendingPaymentStatuses.has(status))
+  );
+}
+
 export function getAccountOrders(page: number) {
   return httpClient.get<AccountOrders>(`/hotsite/orders/?page=${page}`, { requiresAuth: true });
 }

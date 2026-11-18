@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { checkoutService } from "@/features/checkout/services/checkout-service";
+import { CompactSwitch } from "@/features/checkout/compact-switch";
 import type {
   HotsiteAuthenticatedUser,
   UpdateHotsiteUserPayload,
@@ -46,6 +47,9 @@ type ProfileForm = {
   firstName: string;
   lastName: string;
   cpf: string;
+  passport: string;
+  foreignWithoutCpf: boolean;
+  isBrazilResident: boolean;
   phone: string;
   cep: string;
   address: string;
@@ -109,7 +113,13 @@ function getInitialForm(user: HotsiteAuthenticatedUser): ProfileForm {
     firstName: user.first_name ?? "",
     lastName: user.last_name ?? "",
     cpf: formatCpf(user.tax_id ?? ""),
-    phone: formatPhone(user.phone ?? ""),
+    passport: user.passport ?? "",
+    foreignWithoutCpf: user.is_foreign_without_cpf ?? false,
+    isBrazilResident: user.is_brazil_resident ?? true,
+    phone:
+      user.is_foreign_without_cpf && user.is_brazil_resident === false
+        ? user.phone ?? ""
+        : formatPhone(user.phone ?? ""),
     cep: formatCep(user.cep ?? user.zip_code ?? ""),
     address: user.address ?? "",
     addressNumber: user.address_number ?? "",
@@ -141,8 +151,10 @@ export function ProfileCompletionForm({
     if (
       !form.firstName.trim() ||
       !form.lastName.trim() ||
-      form.cpf.replace(/\D/g, "").length !== 11 ||
-      getLocalPhone(form.phone).length < 10
+      (!form.foreignWithoutCpf && form.cpf.replace(/\D/g, "").length !== 11) ||
+      (form.foreignWithoutCpf && form.isBrazilResident && !form.passport.trim()) ||
+      form.phone.replace(/\D/g, "").length <
+        (form.foreignWithoutCpf && !form.isBrazilResident ? 6 : 10)
     ) {
       return;
     }
@@ -151,7 +163,10 @@ export function ProfileCompletionForm({
   };
 
   const handleCepBlur = async () => {
-    const cep = form.cep.replace(/\D/g, "");
+    const cep =
+      form.foreignWithoutCpf && !form.isBrazilResident
+        ? form.cep.trim()
+        : form.cep.replace(/\D/g, "");
 
     if (cep.length !== 8) {
       return;
@@ -185,8 +200,17 @@ export function ProfileCompletionForm({
     void onSubmit({
       first_name: form.firstName.trim(),
       last_name: form.lastName.trim(),
-      cpf,
-      phone: `+55${phone}`,
+      cpf: form.foreignWithoutCpf ? "" : cpf,
+      passport:
+        form.foreignWithoutCpf && form.isBrazilResident
+          ? form.passport.trim()
+          : "",
+      is_foreign_without_cpf: form.foreignWithoutCpf,
+      is_brazil_resident: form.isBrazilResident,
+      phone:
+        form.foreignWithoutCpf && !form.isBrazilResident
+          ? form.phone.trim()
+          : `+55${phone}`,
       cep,
       zip_code: cep,
       address: form.address.trim(),
@@ -254,34 +278,107 @@ export function ProfileCompletionForm({
             className="h-11"
           />
         </Field>
-        <Field label="CPF">
-          <Input
-            required
-            inputMode="numeric"
-            maxLength={14}
-            pattern="\d{3}\.\d{3}\.\d{3}-\d{2}"
-            title="Digite os 11 números do CPF"
-            placeholder="000.000.000-00"
-            value={form.cpf}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, cpf: formatCpf(event.target.value) }))
-            }
-            className="h-11"
-          />
-        </Field>
+        <div className="space-y-2">
+          {!form.foreignWithoutCpf ? (
+            <Field label="CPF">
+              <Input
+                required
+                inputMode="numeric"
+                maxLength={14}
+                pattern="\d{3}\.\d{3}\.\d{3}-\d{2}"
+                title="Digite os 11 números do CPF"
+                placeholder="000.000.000-00"
+                value={form.cpf}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, cpf: formatCpf(event.target.value) }))
+                }
+                className="h-11"
+              />
+            </Field>
+          ) : form.isBrazilResident ? (
+            <Field label="Passaporte">
+              <Input
+                required
+                maxLength={64}
+                placeholder="Número do passaporte"
+                value={form.passport}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    passport: event.target.value.toUpperCase(),
+                  }))
+                }
+                className="h-11"
+              />
+            </Field>
+          ) : null}
+          <div className="space-y-1.5 pt-0.5">
+            <CompactSwitch
+              checked={form.foreignWithoutCpf}
+              label="Não sou brasileiro e não tenho CPF"
+              onCheckedChange={(checked) =>
+                setForm((current) => ({
+                  ...current,
+                  foreignWithoutCpf: checked,
+                  isBrazilResident: true,
+                  cpf: checked ? "" : current.cpf,
+                  passport: "",
+                  country: checked ? current.country : "Brasil",
+                  state: checked ? current.state : "SP",
+                }))
+              }
+            />
+            {form.foreignWithoutCpf ? (
+              <CompactSwitch
+                checked={form.isBrazilResident}
+                label="Sou residente no Brasil"
+                tooltip="Se você é estrangeiro e reside no Brasil, informe seu passaporte. Se mora em outro país, desmarque a opção sobre residir no Brasil."
+                onCheckedChange={(checked) =>
+                  setForm((current) => ({
+                    ...current,
+                    isBrazilResident: checked,
+                    passport: checked ? current.passport : "",
+                    cep: checked ? current.cep : "",
+                    state: checked ? current.state || "SP" : "",
+                    country:
+                      !checked && current.country === "Brasil"
+                        ? ""
+                        : checked && !current.country
+                          ? "Brasil"
+                          : current.country,
+                  }))
+                }
+              />
+            ) : null}
+          </div>
+        </div>
         <Field label="Telefone">
           <Input
             required
             type="tel"
             inputMode="tel"
             autoComplete="tel"
-            maxLength={15}
-            pattern="\(\d{2}\) \d{4,5}-\d{4}"
-            title="Digite o telefone com DDD"
-            placeholder="(00) 00000-0000"
+            maxLength={form.foreignWithoutCpf && !form.isBrazilResident ? 32 : 15}
+            pattern={
+              form.foreignWithoutCpf && !form.isBrazilResident
+                ? undefined
+                : "\\(\\d{2}\\) \\d{4,5}-\\d{4}"
+            }
+            title="Digite o telefone com código de área"
+            placeholder={
+              form.foreignWithoutCpf && !form.isBrazilResident
+                ? "+33 1 23 45 67 89"
+                : "(00) 00000-0000"
+            }
             value={form.phone}
             onChange={(event) =>
-              setForm((current) => ({ ...current, phone: formatPhone(event.target.value) }))
+              setForm((current) => ({
+                ...current,
+                phone:
+                  current.foreignWithoutCpf && !current.isBrazilResident
+                    ? event.target.value
+                    : formatPhone(event.target.value),
+              }))
             }
             className="h-11"
           />
@@ -299,16 +396,22 @@ export function ProfileCompletionForm({
         <Field label="CEP">
           <div className="relative">
             <Input
-              required
-              inputMode="numeric"
+              required={!(form.foreignWithoutCpf && !form.isBrazilResident)}
+              inputMode={form.foreignWithoutCpf && !form.isBrazilResident ? "text" : "numeric"}
               autoComplete="postal-code"
-              maxLength={9}
-              pattern="\d{5}-\d{3}"
-              placeholder="00000-000"
+              maxLength={form.foreignWithoutCpf && !form.isBrazilResident ? 20 : 9}
+              pattern={form.foreignWithoutCpf && !form.isBrazilResident ? undefined : "\\d{5}-\\d{3}"}
+              placeholder={form.foreignWithoutCpf && !form.isBrazilResident ? "Código postal" : "00000-000"}
               value={form.cep}
               onBlur={handleCepBlur}
               onChange={(event) =>
-                setForm((current) => ({ ...current, cep: formatCep(event.target.value) }))
+                setForm((current) => ({
+                  ...current,
+                  cep:
+                    current.foreignWithoutCpf && !current.isBrazilResident
+                      ? event.target.value
+                      : formatCep(event.target.value),
+                }))
               }
               className="h-11 pr-10"
             />
@@ -361,25 +464,33 @@ export function ProfileCompletionForm({
             className="h-11"
           />
         </Field>
-        <Field label="Estado">
-          <select
-            required
-            autoComplete="address-level1"
-            value={form.state}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, state: event.target.value }))
-            }
-            className="h-11 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-          >
-            <option value="" disabled>
-              Selecione
-            </option>
-            {stateOptions.map((state) => (
-              <option key={state} value={state}>
-                {state}
-              </option>
-            ))}
-          </select>
+        <Field label="Estado / região">
+          {form.foreignWithoutCpf && !form.isBrazilResident ? (
+            <Input
+              required
+              autoComplete="address-level1"
+              value={form.state}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, state: event.target.value }))
+              }
+              className="h-11"
+            />
+          ) : (
+            <select
+              required
+              autoComplete="address-level1"
+              value={form.state}
+              onChange={(event) =>
+                setForm((current) => ({ ...current, state: event.target.value }))
+              }
+              className="h-11 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <option value="" disabled>Selecione</option>
+              {stateOptions.map((state) => (
+                <option key={state} value={state}>{state}</option>
+              ))}
+            </select>
+          )}
         </Field>
         <Field label="País">
           <Input

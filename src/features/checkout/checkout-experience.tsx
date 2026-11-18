@@ -43,6 +43,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CreditCardPaymentForm } from "@/features/checkout/credit-card-payment-form";
+import { CompactSwitch } from "@/features/checkout/compact-switch";
 import { getDefaultBillingOption, getPixSavings, isCreditCardOption } from "@/features/checkout/billing-options";
 import { GoogleSignInButton } from "@/features/checkout/google-sign-in-button";
 import { ProfileCompletionForm } from "@/features/checkout/profile-completion-form";
@@ -86,6 +87,7 @@ type CheckoutExperienceProps = {
   mode: "modal" | "page";
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  resumeOrderId?: number;
 };
 
 type LoginForm = {
@@ -97,6 +99,9 @@ type RegisterForm = {
   firstName: string;
   lastName: string;
   cpf: string;
+  passport: string;
+  foreignWithoutCpf: boolean;
+  isBrazilResident: boolean;
   phone: string;
   email: string;
   password: string;
@@ -249,6 +254,22 @@ function getApiErrorMessage(error: unknown) {
 
   const apiError = error as ApiError;
   const details = apiError.details;
+
+  if (apiError.status === 401) {
+    return "Sua sessão expirou. Entre novamente para continuar o pagamento.";
+  }
+
+  if (apiError.status === 403) {
+    return "Você não tem permissão para acessar este pedido.";
+  }
+
+  if (apiError.status === 404) {
+    return "Pedido não encontrado ou indisponível para este usuário.";
+  }
+
+  if (apiError.status >= 500) {
+    return "Não foi possível consultar o pedido agora. Tente novamente em instantes.";
+  }
 
   if (typeof details === "string" && details.trim().length > 0) {
     return details;
@@ -412,6 +433,7 @@ function PixIcon() {
       alt=""
       width={24}
       height={24}
+      unoptimized
       className="size-6 object-contain"
     />
   );
@@ -432,7 +454,7 @@ function getPaymentValue(order: HotsiteOrderResponse | null) {
     return undefined;
   }
 
-  return order.raw?.value ?? undefined;
+  return order.raw?.value ?? order.amount_due ?? undefined;
 }
 
 function getPaymentDescription(order: HotsiteOrderResponse | null) {
@@ -455,19 +477,56 @@ function getPaymentExpiration(
   );
 }
 
-function getQrCode(order: HotsiteOrderResponse | null) {
+function getQrCode(
+  order: HotsiteOrderResponse | null,
+  status?: HotsitePaymentStatusResponse | null
+) {
   return (
     order?.pix_qr_code_base64 ??
     order?.pix_qr_code ??
     order?.raw?.pix_qr_code?.encodedImage ??
+    status?.latest_charge?.pix_qr_code ??
     null
   );
 }
 
-function getCopyPaste(order: HotsiteOrderResponse | null) {
+function getCopyPaste(
+  order: HotsiteOrderResponse | null,
+  status?: HotsitePaymentStatusResponse | null
+) {
   return (
-    order?.pix_copy_paste ?? order?.raw?.pix_qr_code?.payload ?? ""
+    order?.pix_copy_paste ??
+    order?.raw?.pix_qr_code?.payload ??
+    status?.latest_charge?.pix_copy_paste ??
+    ""
   );
+}
+
+function getResumedBillingOption(
+  order: HotsiteOrderResponse | null,
+  status: HotsitePaymentStatusResponse | null
+): HotsiteBillingOption | null {
+  if (!order) return null;
+
+  const paymentType = status?.payment_type ?? order.payment_type;
+  if (!paymentType) return null;
+
+  const installments =
+    status?.installments ?? order.payment_installments ?? 1;
+  const paymentMode = status?.payment_mode ?? order.payment_mode ?? "one_time";
+
+  return {
+    id: -order.order_id,
+    code: `RESUMED_ORDER_${order.order_id}`,
+    type: ["monthly", "recurring"].includes(paymentMode)
+      ? "recurring"
+      : "one_time",
+    cycle: paymentMode,
+    billing_method: paymentType === "pix" ? "pix" : "credit_card",
+    price: order.amount_due ?? status?.latest_charge?.amount_gross ?? "0",
+    allowed_installments: [Math.max(1, installments)],
+    is_active: true,
+  };
 }
 
 function isExpiredStatus(status: HotsitePaymentStatusResponse | null) {
@@ -557,8 +616,11 @@ export function CheckoutExperience({
   mode,
   open = false,
   onOpenChange,
+  resumeOrderId,
 }: CheckoutExperienceProps) {
-  const [step, setStep] = useState<CheckoutStep>("language");
+  const [step, setStep] = useState<CheckoutStep>(
+    resumeOrderId ? "payment" : "language"
+  );
   const placementSelection = useRef<{ languageId: number; level: string; applied: boolean } | null>(null);
   const [placementNotice, setPlacementNotice] = useState<string | null>(null);
   const [languages, setLanguages] = useState<HotsiteCheckoutLanguage[]>([]);
@@ -594,6 +656,9 @@ export function CheckoutExperience({
     firstName: "",
     lastName: "",
     cpf: "",
+    passport: "",
+    foreignWithoutCpf: false,
+    isBrazilResident: true,
     phone: "",
     email: "",
     password: "",
@@ -633,6 +698,11 @@ export function CheckoutExperience({
   const [offerDetailError, setOfferDetailError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [resumeOrderLoading, setResumeOrderLoading] = useState(
+    Boolean(resumeOrderId)
+  );
+  const [resumeOrderError, setResumeOrderError] = useState<string | null>(null);
+  const [resumeOrderReloadKey, setResumeOrderReloadKey] = useState(0);
   const [couponCode, setCouponCode] = useState("");
   const [couponPreview, setCouponPreview] = useState<CouponPreview | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
@@ -645,7 +715,7 @@ export function CheckoutExperience({
   const [offersReloadKey, setOffersReloadKey] = useState(0);
   const [offerDetailReloadKey, setOfferDetailReloadKey] = useState(0);
 
-  const shouldLoadLanguages = mode === "page" || open;
+  const shouldLoadLanguages = (mode === "page" || open) && !resumeOrderId;
 
   const registerEmailInvalid =
     registerEmailTouched && !isValidEmail(registerForm.email);
@@ -672,20 +742,29 @@ export function CheckoutExperience({
       .map((domain) => `${localPart}@${domain}`)
       .filter((suggestion) => suggestion.toLowerCase() !== email.toLowerCase());
   }, [registerForm.email]);
-  const selectedBilling = useMemo(
-    () =>
-      offerDetail?.billing_options.find(
+  const selectedBilling = useMemo(() => {
+    const offerBilling = offerDetail?.billing_options.find(
         (option) => option.code === selectedBillingCode
-      ) ?? null,
-    [offerDetail, selectedBillingCode]
-  );
+      );
+
+    return offerBilling ?? getResumedBillingOption(orderResponse, paymentStatus);
+  }, [offerDetail, orderResponse, paymentStatus, selectedBillingCode]);
   const activeCouponPreview =
     couponPreview?.billing_option_code === selectedBillingCode
       ? couponPreview
       : null;
   const isSelectedCreditCard = isCreditCardOption(selectedBilling);
+  const isForeignOutsideBrazil = Boolean(
+    paymentCustomer?.is_foreign_without_cpf &&
+      paymentCustomer.is_brazil_resident === false
+  );
+  const stripeIsAvailable = Boolean(
+    paymentConfig?.gateway === "stripe" ||
+      paymentConfig?.gateways?.some((gateway) => gateway.gateway === "stripe")
+  );
+  const usesStripeCheckout = isForeignOutsideBrazil && stripeIsAvailable;
   useEffect(() => {
-    if (step !== "payment" || !isSelectedCreditCard || !orderResponse?.order_id) return;
+    if (step !== "payment" || !orderResponse?.order_id) return;
     let cancelled = false;
 
     void Promise.all([
@@ -705,7 +784,7 @@ export function CheckoutExperience({
     return () => {
       cancelled = true;
     };
-  }, [authToken, isSelectedCreditCard, orderResponse?.order_id, step]);
+  }, [authToken, orderResponse?.order_id, step]);
   const activeBillingOptions = useMemo(
     () => offerDetail?.billing_options.filter((option) => option.is_active) ?? [],
     [offerDetail]
@@ -772,8 +851,10 @@ export function CheckoutExperience({
       return "Matrícula confirmada";
     }
 
-    return isSelectedCreditCard ? "Pague com segurança" : "Conclua com PIX";
-  }, [googleProfileUser, isSelectedCreditCard, paymentStatus, step]);
+    return isSelectedCreditCard || usesStripeCheckout
+      ? "Pague com segurança"
+      : "Conclua com PIX";
+  }, [googleProfileUser, isSelectedCreditCard, paymentStatus, step, usesStripeCheckout]);
   const currentJourneyStep = getJourneyStep(step);
 
   useEffect(() => {
@@ -803,6 +884,51 @@ export function CheckoutExperience({
   }, [orderResponse?.order_id, paymentStatus, selectedOfferSummary]);
 
   useEffect(() => {
+    if (!resumeOrderId) return;
+
+    let cancelled = false;
+    const orderId = resumeOrderId;
+
+    async function resumeOrderPayment() {
+      setResumeOrderLoading(true);
+      setResumeOrderError(null);
+      setPaymentError(null);
+
+      try {
+        const [order, status] = await Promise.all([
+          checkoutService.getOrder(orderId),
+          checkoutService.getPaymentStatus(orderId),
+        ]);
+
+        if (cancelled) return;
+
+        setOrderResponse(order.data);
+        setPaymentStatus(status.data);
+        setHasAuthenticatedSession(true);
+        setCardPaymentSubmitted(false);
+        setPixContractAccepted(false);
+        setStep("payment");
+      } catch (error) {
+        if (!cancelled) {
+          setResumeOrderError(getApiErrorMessage(error));
+        }
+      } finally {
+        if (!cancelled) {
+          setResumeOrderLoading(false);
+        }
+      }
+    }
+
+    void resumeOrderPayment();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [resumeOrderId, resumeOrderReloadKey]);
+
+  useEffect(() => {
+    if (resumeOrderId) return;
+
     let cancelled = false;
 
     async function restoreCart() {
@@ -889,7 +1015,7 @@ export function CheckoutExperience({
       cancelled = true;
       window.removeEventListener(checkoutCartActionEvent, handleCartAction);
     };
-  }, [mode]);
+  }, [mode, resumeOrderId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1074,7 +1200,7 @@ export function CheckoutExperience({
       step !== "payment" ||
       !orderResponse?.order_id ||
       isPaidStatus(paymentStatus) ||
-      (isSelectedCreditCard && !cardPaymentSubmitted)
+      ((isSelectedCreditCard || usesStripeCheckout) && !cardPaymentSubmitted)
     ) {
       return;
     }
@@ -1124,6 +1250,7 @@ export function CheckoutExperience({
     authToken,
     cardPaymentSubmitted,
     isSelectedCreditCard,
+    usesStripeCheckout,
     orderResponse?.order_id,
     paymentStatus,
     step,
@@ -1365,6 +1492,39 @@ export function CheckoutExperience({
     }
   };
 
+  const handleStartStripePayment = async () => {
+    if ((!authToken && !hasAuthenticatedSession) || !orderResponse?.order_id) {
+      setPaymentError("Não foi possível identificar a autenticação ou o pedido.");
+      return;
+    }
+    if (!isForeignOutsideBrazil || !stripeIsAvailable) {
+      setPaymentError(
+        "O checkout internacional está disponível somente para clientes estrangeiros que não residem no Brasil."
+      );
+      return;
+    }
+    setCardPaymentLoading(true);
+    setPaymentError(null);
+    try {
+      const response = await checkoutService.startCardPayment(
+        orderResponse.order_id,
+        {
+          accept_contract: true,
+          holder_is_customer: true,
+          gateway_choice: "stripe",
+        },
+        authToken ?? undefined
+      );
+      if (!response.data.checkout_url) {
+        throw new Error("O Stripe não retornou a página segura de pagamento.");
+      }
+      window.location.assign(response.data.checkout_url);
+    } catch (error) {
+      setPaymentError(getApiErrorMessage(error));
+      setCardPaymentLoading(false);
+    }
+  };
+
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const submittedEmail = loginForm.email.trim();
@@ -1433,8 +1593,13 @@ export function CheckoutExperience({
     if (
       !registerForm.firstName.trim() ||
       !registerForm.lastName.trim() ||
-      registerForm.cpf.replace(/\D/g, "").length !== 11 ||
-      registerForm.phone.replace(/\D/g, "").length < 10
+      (!registerForm.foreignWithoutCpf &&
+        registerForm.cpf.replace(/\D/g, "").length !== 11) ||
+      (registerForm.foreignWithoutCpf &&
+        registerForm.isBrazilResident &&
+        !registerForm.passport.trim()) ||
+      registerForm.phone.replace(/\D/g, "").length <
+        (registerForm.foreignWithoutCpf && !registerForm.isBrazilResident ? 6 : 10)
     ) {
       setFormError("Preencha seus dados pessoais para continuar.");
       return;
@@ -1481,11 +1646,25 @@ export function CheckoutExperience({
       await checkoutService.createUser({
         first_name: registerForm.firstName,
         last_name: registerForm.lastName,
-        cpf: registerForm.cpf.replace(/\D/g, ""),
+        cpf: registerForm.foreignWithoutCpf
+          ? ""
+          : registerForm.cpf.replace(/\D/g, ""),
+        passport:
+          registerForm.foreignWithoutCpf && registerForm.isBrazilResident
+            ? registerForm.passport.trim()
+            : "",
+        is_foreign_without_cpf: registerForm.foreignWithoutCpf,
+        is_brazil_resident: registerForm.isBrazilResident,
         email: registerForm.email,
         password: registerForm.password,
-        phone: registerForm.phone.replace(/\D/g, ""),
-        zip_code: registerForm.zipCode.replace(/\D/g, ""),
+        phone:
+          registerForm.foreignWithoutCpf && !registerForm.isBrazilResident
+            ? registerForm.phone.trim()
+            : registerForm.phone.replace(/\D/g, ""),
+        zip_code:
+          registerForm.foreignWithoutCpf && !registerForm.isBrazilResident
+            ? registerForm.zipCode.trim()
+            : registerForm.zipCode.replace(/\D/g, ""),
         city: registerForm.city,
         state: registerForm.state,
         country: registerForm.country,
@@ -1599,7 +1778,7 @@ export function CheckoutExperience({
   };
 
   const handleCopyPix = async () => {
-    const copyPaste = getCopyPaste(orderResponse);
+    const copyPaste = getCopyPaste(orderResponse, paymentStatus);
 
     if (!copyPaste) {
       return;
@@ -2501,40 +2680,115 @@ export function CheckoutExperience({
                         className="h-11"
                       />
                     </Field>
-                    <Field htmlFor="checkout-register-cpf" label="CPF">
-                      <Input id="checkout-register-cpf"
-                        required
-                        inputMode="numeric"
-                        autoComplete="off"
-                        maxLength={14}
-                        pattern="\d{3}\.\d{3}\.\d{3}-\d{2}"
-                        title="Digite os 11 números do CPF"
-                        placeholder="000.000.000-00"
-                        value={registerForm.cpf}
-                        onChange={(event) =>
-                          setRegisterForm((current) => ({
-                            ...current,
-                            cpf: formatCpf(event.target.value),
-                          }))
-                        }
-                        className="h-11"
-                      />
-                    </Field>
+                    <div className="space-y-2">
+                      {!registerForm.foreignWithoutCpf ? (
+                        <Field htmlFor="checkout-register-cpf" label="CPF">
+                          <Input id="checkout-register-cpf"
+                            required
+                            inputMode="numeric"
+                            autoComplete="off"
+                            maxLength={14}
+                            pattern="\d{3}\.\d{3}\.\d{3}-\d{2}"
+                            title="Digite os 11 números do CPF"
+                            placeholder="000.000.000-00"
+                            value={registerForm.cpf}
+                            onChange={(event) =>
+                              setRegisterForm((current) => ({
+                                ...current,
+                                cpf: formatCpf(event.target.value),
+                              }))
+                            }
+                            className="h-11"
+                          />
+                        </Field>
+                      ) : registerForm.isBrazilResident ? (
+                        <Field htmlFor="checkout-register-passport" label="Passaporte">
+                          <Input id="checkout-register-passport"
+                            required
+                            autoComplete="off"
+                            maxLength={64}
+                            placeholder="Número do passaporte"
+                            value={registerForm.passport}
+                            onChange={(event) =>
+                              setRegisterForm((current) => ({
+                                ...current,
+                                passport: event.target.value.toUpperCase(),
+                              }))
+                            }
+                            className="h-11"
+                          />
+                        </Field>
+                      ) : null}
+                      <div className="space-y-1.5 pt-0.5">
+                        <CompactSwitch
+                          checked={registerForm.foreignWithoutCpf}
+                          label="Não sou brasileiro e não tenho CPF"
+                          onCheckedChange={(checked) =>
+                            setRegisterForm((current) => ({
+                              ...current,
+                              foreignWithoutCpf: checked,
+                              isBrazilResident: true,
+                              cpf: checked ? "" : current.cpf,
+                              passport: "",
+                              country: checked ? current.country : "Brasil",
+                              state: checked ? current.state : "SP",
+                            }))
+                          }
+                        />
+                        {registerForm.foreignWithoutCpf ? (
+                          <CompactSwitch
+                            checked={registerForm.isBrazilResident}
+                            label="Sou residente no Brasil"
+                            tooltip="Se você é estrangeiro e reside no Brasil, informe seu passaporte. Se mora em outro país, desmarque a opção sobre residir no Brasil."
+                            onCheckedChange={(checked) =>
+                              setRegisterForm((current) => ({
+                                ...current,
+                                isBrazilResident: checked,
+                                passport: checked ? current.passport : "",
+                                zipCode: checked ? current.zipCode : "",
+                                state: checked ? current.state || "SP" : "",
+                                country:
+                                  !checked && current.country === "Brasil"
+                                    ? ""
+                                    : checked && !current.country
+                                      ? "Brasil"
+                                      : current.country,
+                              }))
+                            }
+                          />
+                        ) : null}
+                      </div>
+                    </div>
                     <Field htmlFor="checkout-register-phone" label="Telefone">
                       <Input id="checkout-register-phone"
                         required
                         type="tel"
                         inputMode="tel"
                         autoComplete="tel"
-                        maxLength={15}
-                        pattern="\(\d{2}\) \d{4,5}-\d{4}"
-                        title="Digite o telefone com DDD"
-                        placeholder="(00) 00000-0000"
+                        maxLength={
+                          registerForm.foreignWithoutCpf && !registerForm.isBrazilResident
+                            ? 32
+                            : 15
+                        }
+                        pattern={
+                          registerForm.foreignWithoutCpf && !registerForm.isBrazilResident
+                            ? undefined
+                            : "\\(\\d{2}\\) \\d{4,5}-\\d{4}"
+                        }
+                        title="Digite o telefone com código de área"
+                        placeholder={
+                          registerForm.foreignWithoutCpf && !registerForm.isBrazilResident
+                            ? "+33 1 23 45 67 89"
+                            : "(00) 00000-0000"
+                        }
                         value={registerForm.phone}
                         onChange={(event) =>
                           setRegisterForm((current) => ({
                             ...current,
-                            phone: formatPhone(event.target.value),
+                            phone:
+                              current.foreignWithoutCpf && !current.isBrazilResident
+                                ? event.target.value
+                                : formatPhone(event.target.value),
                           }))
                         }
                         className="h-11"
@@ -2822,23 +3076,35 @@ export function CheckoutExperience({
                       />
                     </Field>
                     <Field htmlFor="checkout-register-state" label="Estado">
-                      <select id="checkout-register-state"
-                        required
-                        value={registerForm.state}
-                        onChange={(event) =>
-                          setRegisterForm((current) => ({
-                            ...current,
-                            state: event.target.value,
-                          }))
-                        }
-                        className="h-11 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                      >
-                        {stateOptions.map((state) => (
-                          <option key={state} value={state}>
-                            {state}
-                          </option>
-                        ))}
-                      </select>
+                      {registerForm.foreignWithoutCpf && !registerForm.isBrazilResident ? (
+                        <Input id="checkout-register-state"
+                          required
+                          value={registerForm.state}
+                          onChange={(event) =>
+                            setRegisterForm((current) => ({
+                              ...current,
+                              state: event.target.value,
+                            }))
+                          }
+                          className="h-11"
+                        />
+                      ) : (
+                        <select id="checkout-register-state"
+                          required
+                          value={registerForm.state}
+                          onChange={(event) =>
+                            setRegisterForm((current) => ({
+                              ...current,
+                              state: event.target.value,
+                            }))
+                          }
+                          className="h-11 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          {stateOptions.map((state) => (
+                            <option key={state} value={state}>{state}</option>
+                          ))}
+                        </select>
+                      )}
                     </Field>
                     <Field htmlFor="checkout-register-country" label="País">
                       <Input id="checkout-register-country"
@@ -2890,7 +3156,22 @@ export function CheckoutExperience({
             </div>
           ) : null}
 
-          {step === "payment" && orderResponse ? (
+          {step === "payment" && resumeOrderLoading ? (
+            <div className="mx-auto max-w-4xl">
+              <CheckoutLoading />
+            </div>
+          ) : null}
+
+          {step === "payment" && !resumeOrderLoading && resumeOrderError ? (
+            <div className="mx-auto max-w-4xl">
+              <CheckoutError
+                message={resumeOrderError}
+                onRetry={() => setResumeOrderReloadKey((value) => value + 1)}
+              />
+            </div>
+          ) : null}
+
+          {step === "payment" && !resumeOrderLoading && !resumeOrderError && orderResponse ? (
             <div className="mx-auto max-w-4xl space-y-6">
               {isPaidStatus(paymentStatus) ? (
                 <div className="rounded-[1.5rem] border border-[#147b29]/20 bg-[#147b29]/5 p-6 text-center">
@@ -2940,7 +3221,7 @@ export function CheckoutExperience({
                     Reiniciar checkout
                   </Button>
                 </div>
-              ) : isFailedStatus(paymentStatus) && isSelectedCreditCard ? (
+              ) : isFailedStatus(paymentStatus) && (isSelectedCreditCard || usesStripeCheckout) ? (
                 <div className="rounded-[1.5rem] border border-destructive/20 bg-destructive/5 p-6 text-center">
                   <CreditCard className="mx-auto size-12 text-destructive" />
                   <h2 className="mt-4 font-heading text-3xl font-semibold tracking-[-0.03em] text-foreground">
@@ -2961,21 +3242,59 @@ export function CheckoutExperience({
                     Tentar novamente
                   </Button>
                 </div>
-              ) : isSelectedCreditCard &&
+              ) : (isSelectedCreditCard || usesStripeCheckout) &&
                 selectedBilling &&
                 !cardPaymentSubmitted ? (
-                <CreditCardPaymentForm
-                  key={selectedBilling.code}
-                  billingOption={selectedBilling}
-                  contractUrl={orderResponse.contract?.contract_file_url}
-                  loading={cardPaymentLoading}
-                  error={paymentError}
-                  paymentConfig={paymentConfig}
-                  customer={paymentCustomer}
-                  amount={Number(orderResponse.amount_due ?? selectedBilling.price)}
-                  onSubmit={handleStartCardPayment}
-                />
-              ) : isSelectedCreditCard ? (
+                usesStripeCheckout ? (
+                  <div className="mx-auto max-w-xl rounded-[1.5rem] border border-border bg-white p-6 text-center shadow-sm sm:p-8">
+                    <CreditCard className="mx-auto size-10 text-primary" />
+                    <h2 className="mt-4 font-heading text-2xl font-semibold tracking-[-0.03em] text-foreground">
+                      Pagamento internacional
+                    </h2>
+                    <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+                      Como você informou que não reside no Brasil, seu pagamento será processado com segurança pelo Stripe.
+                    </p>
+                    {orderResponse.contract?.contract_file_url ? (
+                      <a
+                        href={orderResponse.contract.contract_file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-3 inline-block text-xs font-semibold text-primary underline underline-offset-4"
+                      >
+                        Ler contrato da matrícula
+                      </a>
+                    ) : null}
+                    <Button
+                      type="button"
+                      className="mt-5 h-11 w-full rounded-full"
+                      disabled={cardPaymentLoading}
+                      onClick={handleStartStripePayment}
+                    >
+                      {cardPaymentLoading ? (
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                      ) : (
+                        <CreditCard className="mr-2 size-4" />
+                      )}
+                      Continuar para o Stripe
+                    </Button>
+                    {paymentError ? (
+                      <p className="mt-4 text-xs text-destructive">{paymentError}</p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <CreditCardPaymentForm
+                    key={selectedBilling.code}
+                    billingOption={selectedBilling}
+                    contractUrl={orderResponse.contract?.contract_file_url}
+                    loading={cardPaymentLoading}
+                    error={paymentError}
+                    paymentConfig={paymentConfig}
+                    customer={paymentCustomer}
+                    amount={Number(orderResponse.amount_due ?? selectedBilling.price)}
+                    onSubmit={handleStartCardPayment}
+                  />
+                )
+              ) : isSelectedCreditCard || usesStripeCheckout ? (
                 <div className="rounded-[1.5rem] border border-border bg-white p-8 text-center shadow-sm">
                   <Loader2 className="mx-auto size-12 animate-spin text-primary" />
                   <h2 className="mt-4 font-heading text-3xl font-semibold tracking-[-0.03em] text-foreground">
@@ -3029,9 +3348,9 @@ export function CheckoutExperience({
               ) : (
                 <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
                   <div className="rounded-[1.4rem] border border-border bg-white p-5 text-center shadow-sm">
-                    {getQrCode(orderResponse) ? (
+                    {getQrCode(orderResponse, paymentStatus) ? (
                       <Image
-                        src={`data:image/png;base64,${getQrCode(orderResponse)}`}
+                        src={`data:image/png;base64,${getQrCode(orderResponse, paymentStatus)}`}
                         alt="QR code PIX"
                         width={260}
                         height={260}
@@ -3082,13 +3401,13 @@ export function CheckoutExperience({
                           className="rounded-lg"
                           onClick={handleCopyPix}
                           aria-label="Copiar código PIX"
-                          disabled={!getCopyPaste(orderResponse)}
+                          disabled={!getCopyPaste(orderResponse, paymentStatus)}
                         >
                           <Copy className="size-4" />
                         </Button>
                       </div>
                       <p className="mt-3 max-h-24 overflow-y-auto break-all text-xs leading-5 text-muted-foreground">
-                        {getCopyPaste(orderResponse) || "Código não retornado."}
+                        {getCopyPaste(orderResponse, paymentStatus) || "Código não retornado."}
                       </p>
                       {copyFeedback ? (
                         <p className="mt-2 text-xs font-semibold text-primary">
