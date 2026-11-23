@@ -11,7 +11,6 @@ export function HomeFooter() {
             <p>Speak beyond borders.</p>
           </div>
           <nav aria-label="Links do rodapé">
-            <Link href="/suporte">Suporte</Link>
             <Link href="/teste-de-nivel">Teste de nível</Link>
             <a
               href="https://www.instagram.com/cest.veli/"
@@ -22,7 +21,7 @@ export function HomeFooter() {
             </a>
           </nav>
           <div className="v-footer-contact">
-            <a href="mailto:veliescola@gmail.com">veliescola@gmail.com</a>
+            <a href="mailto:contato@veliescola.com">contato@veliescola.com</a>
             <a href="tel:+5571992997191">(71) 99299-7191</a>
           </div>
         </div>

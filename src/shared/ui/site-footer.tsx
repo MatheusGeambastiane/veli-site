@@ -35,9 +35,9 @@ export function SiteFooter() {
               E-mail:{" "}
               <a
                 className="hover:text-foreground"
-                href="mailto:veliescola@gmail.com"
+                href="mailto:contato@veliescola.com"
               >
-                veliescola@gmail.com
+                contato@veliescola.com
               </a>
             </p>
           </div>

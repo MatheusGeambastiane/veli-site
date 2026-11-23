@@ -67,6 +67,7 @@ export function CheckoutCart({
                   alt={item.offer.student_classes[0].course.language.name}
                   width={56}
                   height={56}
+                  unoptimized
                   className="size-14 rounded-full border border-border object-cover"
                 />
                 <div className="min-w-0 flex-1">

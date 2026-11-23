@@ -6,7 +6,6 @@ export const siteConfig = {
     { href: "/cursos", label: "Cursos" },
     { href: "/metodologia", label: "Metodologia" },
     { href: "/para-empresas", label: "Para Empresas" },
-    { href: "/suporte", label: "Suporte" },
   ],
   secondaryNavigation: [
     { href: "/blog", label: "Blog" },

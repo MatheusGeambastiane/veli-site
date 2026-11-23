@@ -41,10 +41,13 @@ export function JourneyHeader({
               <ShieldCheck size={16} aria-hidden="true" /> Ambiente seguro
             </span>
           ) : null}
-          <Link href="/suporte" aria-label="Precisa de ajuda? Acessar suporte">
+          <a
+            href="mailto:contato@veliescola.com"
+            aria-label="Precisa de ajuda? Enviar e-mail para o suporte"
+          >
             <CircleHelp size={18} aria-hidden="true" />
             <span>Precisa de ajuda?</span>
-          </Link>
+          </a>
         </nav>
         {accountActions ? (
           <div className={styles.accountActions}>{accountActions}</div>
@@ -58,9 +61,9 @@ export function JourneyFooter() {
   return (
     <footer className={styles.footer}>
       <span>Veli · Speak beyond borders.</span>
-      <Link href="/suporte">
+      <a href="mailto:contato@veliescola.com">
         Fale com a gente <ArrowUpRight size={15} aria-hidden="true" />
-      </Link>
+      </a>
     </footer>
   );
 }

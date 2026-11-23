@@ -4,7 +4,6 @@ export const navigationLinks = [
   { href: "/cursos", label: "Cursos" },
   { href: "/metodologia", label: "Metodologia" },
   { href: "/para-empresas", label: "Para Empresas" },
-  { href: "/suporte", label: "Suporte" },
 ];
 
 export const languageOptions: LanguageOption[] = [

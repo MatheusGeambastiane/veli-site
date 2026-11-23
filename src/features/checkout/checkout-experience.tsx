@@ -2143,6 +2143,7 @@ export function CheckoutExperience({
                           alt={language.name}
                           width={64}
                           height={64}
+                          unoptimized
                           className="size-16 rounded-full border border-border object-cover"
                         />
                         <div>
@@ -2188,6 +2189,7 @@ export function CheckoutExperience({
                     alt={selectedLanguage.name}
                     width={44}
                     height={44}
+                    unoptimized
                     className="size-11 rounded-full border border-border object-cover"
                   />
                   <div>
@@ -2227,6 +2229,7 @@ export function CheckoutExperience({
                               alt={selectedLanguage?.name ?? offer.name}
                               width={56}
                               height={56}
+                              unoptimized
                               className="size-14 rounded-full border border-border object-cover"
                             />
                             <div>
