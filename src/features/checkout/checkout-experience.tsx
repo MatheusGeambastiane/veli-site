@@ -48,6 +48,7 @@ import { getDefaultBillingOption, getPixSavings, isCreditCardOption } from "@/fe
 import { GoogleSignInButton } from "@/features/checkout/google-sign-in-button";
 import { ProfileCompletionForm } from "@/features/checkout/profile-completion-form";
 import { checkoutService } from "@/features/checkout/services/checkout-service";
+import { findPlacementOffersWithFallback } from "@/features/checkout/services/placement-offer-fallback";
 import { notifyAuthSessionChanged } from "@/shared/lib/auth-session";
 import { courseHasLevel, formatOfferLevels } from "@/shared/lib/course-levels";
 import {
@@ -1102,7 +1103,18 @@ export function CheckoutExperience({
       try {
         const placement = placementSelection.current;
         const shouldApply = placement && !placement.applied && placement.languageId === languageId;
-        const response = await checkoutService.getOffersByLanguage(languageId, shouldApply ? placement.level : undefined);
+        const placementMatch = shouldApply
+          ? await findPlacementOffersWithFallback(
+              placement.level,
+              async (level) => {
+                const response = await checkoutService.getOffersByLanguage(languageId, level);
+                return response.data.results;
+              },
+            )
+          : null;
+        const response = placementMatch
+          ? { data: { results: placementMatch.offers } }
+          : await checkoutService.getOffersByLanguage(languageId);
 
         if (!cancelled) {
           setOffers(response.data.results);
@@ -1110,10 +1122,18 @@ export function CheckoutExperience({
             placement.applied = true;
             const offer = response.data.results.find((item) =>
               item.student_classes.some((studentClass) =>
-                studentClass.course.language.id === languageId && courseHasLevel(studentClass.course, placement.level)
+                studentClass.course.language.id === languageId
+                  && placementMatch?.matchedLevel
+                  && courseHasLevel(studentClass.course, placementMatch.matchedLevel)
               )
             );
             if (offer) {
+              const matchedLevel = placementMatch?.matchedLevel ?? placement.level;
+              if (matchedLevel !== placement.level) {
+                setPlacementNotice(
+                  `Não há turmas disponíveis para o nível ${placement.level}. Recomendamos a turma de nível ${matchedLevel}, a opção mais próxima disponível.`,
+                );
+              }
               try {
                 saveCheckoutCart({ version: 1, language: selectedLanguage!, offer, savedAt: new Date().toISOString() });
               } catch {
@@ -1122,7 +1142,15 @@ export function CheckoutExperience({
               setSelectedOfferSummary(offer);
               setClassChoiceMode("class");
               setStep("selection");
-              trackAnalyticsEvent({ event_type: "offer_viewed", metadata: { offer_id: offer.id, origin: "placement_test", level: placement.level } });
+              trackAnalyticsEvent({
+                event_type: "offer_viewed",
+                metadata: {
+                  offer_id: offer.id,
+                  origin: "placement_test",
+                  level: matchedLevel,
+                  placement_level: placement.level,
+                },
+              });
             } else {
               setPlacementNotice(`Não há turmas disponíveis para o nível ${placement.level} no momento.`);
             }
