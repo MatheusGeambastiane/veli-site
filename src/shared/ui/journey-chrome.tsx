@@ -42,7 +42,7 @@ export function JourneyHeader({
             </span>
           ) : null}
           <a
-            href="mailto:contato@veliescola.com"
+            href="mailto:contato@escolaveli.com"
             aria-label="Precisa de ajuda? Enviar e-mail para o suporte"
           >
             <CircleHelp size={18} aria-hidden="true" />
@@ -61,7 +61,7 @@ export function JourneyFooter() {
   return (
     <footer className={styles.footer}>
       <span>Veli · Speak beyond borders.</span>
-      <a href="mailto:contato@veliescola.com">
+      <a href="mailto:contato@escolaveli.com">
         Fale com a gente <ArrowUpRight size={15} aria-hidden="true" />
       </a>
     </footer>

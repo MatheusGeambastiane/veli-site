@@ -21,7 +21,7 @@ export function HomeFooter() {
             </a>
           </nav>
           <div className="v-footer-contact">
-            <a href="mailto:contato@veliescola.com">contato@veliescola.com</a>
+            <a href="mailto:contato@escolaveli.com">contato@escolaveli.com</a>
             <a href="tel:+5571992997191">(71) 99299-7191</a>
           </div>
         </div>
