@@ -69,4 +69,14 @@ export const homeFaqs = [
     answer:
       "Acesse o teste de nível pelo botão “Descobrir meu nível”, escolha o idioma e siga as etapas. O resultado ajuda você a entender seu ponto de partida para continuar aprendendo.",
   },
+  {
+    question: "Como é feita a avaliação de nível ao final do curso?",
+    answer:
+      "Fazemos avaliações constantes do aprendizado e acompanhamos a evolução de cada aluno de acordo com os parâmetros do Quadro Europeu Comum de Referência para Línguas (CEFR).",
+  },
+  {
+    question: "O curso de idiomas precisa ser reconhecido pelo MEC?",
+    answer:
+      "Não. De acordo com a Lei de Diretrizes e Bases da Educação Nacional (LDB), os cursos de idiomas são classificados como cursos livres e não precisam ser reconhecidos pelo MEC para emitir certificados.",
+  },
 ];
