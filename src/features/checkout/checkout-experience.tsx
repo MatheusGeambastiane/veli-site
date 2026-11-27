@@ -8,6 +8,7 @@ import {
   FormEvent,
   MouseEvent,
   useEffect,
+  useEffectEvent,
   useMemo,
   useRef,
   useState,
@@ -21,6 +22,7 @@ import {
   CreditCard,
   Eye,
   EyeOff,
+  Info,
   Loader2,
   Moon,
   ReceiptText,
@@ -82,7 +84,7 @@ type ClassChoiceMode = "class" | "period";
 type AuthMode = "login" | "register";
 type AuthOrigin = "checkout" | "cart";
 type PeriodValue = "morning" | "afternoon" | "night";
-type PaymentBillingType = "one_time" | "recurring";
+type PaymentBillingType = "one_time" | "recurring" | "enrollment";
 
 type CheckoutExperienceProps = {
   mode: "modal" | "page";
@@ -242,7 +244,7 @@ function getPasswordStrength(value: string) {
   return { level: 4, label: "Forte", color: "bg-emerald-600" };
 }
 
-function getApiErrorMessage(error: unknown) {
+function getApiErrorMessage(error: unknown, context?: "catalog") {
   const defaultMessage = "Não foi possível carregar os dados agora.";
 
   if (error instanceof Error) {
@@ -269,6 +271,7 @@ function getApiErrorMessage(error: unknown) {
   }
 
   if (apiError.status >= 500) {
+    if (context === "catalog") return "Catálogo temporariamente indisponível";
     return "Não foi possível consultar o pedido agora. Tente novamente em instantes.";
   }
 
@@ -450,6 +453,41 @@ function getBillingDescription(option: HotsiteBillingOption) {
   return option.type === "recurring" ? "Cobrança mensal" : "Pagamento único";
 }
 
+function formatRecurringMonth(value?: string | null) {
+  const match = typeof value === "string"
+    ? /^(\d{4})-(\d{2})(?:-\d{2}(?:T.*)?)?$/.exec(value)
+    : null;
+  const year = Number(match?.[1]);
+  const month = Number(match?.[2]);
+
+  if (!match || month < 1 || month > 12) return "um mês a confirmar";
+
+  return new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, month - 1, 1)));
+}
+
+function formatLocalDate(value?: string | null) {
+  const match = typeof value === "string"
+    ? /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(value)
+    : null;
+  const year = Number(match?.[1]);
+  const month = Number(match?.[2]);
+  const day = Number(match?.[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    !match ||
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return "uma data a confirmar";
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeZone: "UTC" })
+    .format(date);
+}
+
 function getPaymentValue(order: HotsiteOrderResponse | null) {
   if (!order) {
     return undefined;
@@ -566,6 +604,68 @@ function isFailedStatus(status: HotsitePaymentStatusResponse | null) {
   );
 }
 
+function SubscriptionRedirect({ pix, contractUrl, checkoutUrl, createCheckout }: {
+  pix: boolean;
+  contractUrl?: string | null;
+  checkoutUrl?: string;
+  createCheckout: () => Promise<string>;
+}) {
+  const [seconds, setSeconds] = useState(5);
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState("");
+  const inFlight = useRef(false);
+
+  async function openPayment() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setOpening(true);
+    setError("");
+    try {
+      const url = checkoutUrl || await createCheckout();
+      window.location.assign(url);
+    } catch (cause) {
+      inFlight.current = false;
+      setOpening(false);
+      setError(getApiErrorMessage(cause));
+    }
+  }
+
+  const openWhenReady = useEffectEvent(openPayment);
+  useEffect(() => {
+    // A returning student can reopen an existing checkout while the bank confirms payment.
+    if (checkoutUrl || opening || error) return;
+    const deadline = Date.now() + 5000;
+    const timer = window.setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setSeconds(remaining);
+      if (remaining === 0) {
+        window.clearInterval(timer);
+        void openWhenReady();
+      }
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [checkoutUrl, opening, error]);
+
+  return (
+    <div className="mx-auto max-w-xl space-y-4 rounded-3xl border bg-white p-6 text-center">
+      <p>
+        <span className="text-[1.3em]">Você será redirecionado para o pagamento</span>
+        {!checkoutUrl && !error && !opening && <span className="ml-2 tabular-nums">{seconds}s</span>}
+      </p>
+      <Button type="button" className="[zoom:1.2]" disabled={opening} onClick={openPayment}>
+        {pix ? <PixIcon /> : <CreditCard aria-hidden="true" className="size-5" />}
+        Seguir para pagamento
+      </Button>
+      <p className="text-sm text-muted-foreground">
+        Ao prosseguir, você concorda com o {contractUrl
+          ? <a className="underline" href={contractUrl} target="_blank" rel="noreferrer">termo de adesão</a>
+          : "termo de adesão"}.
+      </p>
+      {error && <p role="alert">{error}</p>}
+    </div>
+  );
+}
+
 function CheckoutLoading() {
   return (
     <div className="flex min-h-48 items-center justify-center rounded-[1.4rem] border border-dashed border-border bg-muted/40">
@@ -639,6 +739,7 @@ export function CheckoutExperience({
   const [selectedBillingCode, setSelectedBillingCode] = useState<string | null>(
     null
   );
+  const [selectedRecurringCode, setSelectedRecurringCode] = useState<string | null>(null);
   const [paymentBillingType, setPaymentBillingType] =
     useState<PaymentBillingType>("one_time");
   const [authMode, setAuthMode] = useState<AuthMode>("login");
@@ -755,6 +856,15 @@ export function CheckoutExperience({
       ? couponPreview
       : null;
   const isSelectedCreditCard = isCreditCardOption(selectedBilling);
+  const enrollmentMethod = paymentStatus?.enrollment_billing_method || orderResponse?.enrollment_billing_method;
+  const enrollmentGateway = paymentStatus?.enrollment_gateway || orderResponse?.enrollment_gateway;
+  const needsCardAuthorization = enrollmentMethod === "credit_card" && (
+    orderResponse?.payment_type === "pix" || (enrollmentGateway === "abacatepay" &&
+      (paymentStatus?.enrollment_card_reuse ?? orderResponse?.enrollment_card_reuse) === false)
+  );
+  const enrollmentAuthorizationUrl = paymentStatus?.enrollment_checkout_url || orderResponse?.enrollment_checkout_url;
+  const enrollmentDueDate = paymentStatus?.enrollment_first_due_date || orderResponse?.enrollment_first_due_date;
+  const enrollmentStartMonth = paymentStatus?.enrollment_start_month || orderResponse?.enrollment_start_month;
   const isForeignOutsideBrazil = Boolean(
     paymentCustomer?.is_foreign_without_cpf &&
       paymentCustomer.is_brazil_resident === false
@@ -764,8 +874,15 @@ export function CheckoutExperience({
       paymentConfig?.gateways?.some((gateway) => gateway.gateway === "stripe")
   );
   const usesStripeCheckout = isForeignOutsideBrazil && stripeIsAvailable;
+  const automaticPix = paymentStatus?.automatic_pix ?? orderResponse?.automatic_pix ?? false;
+  const usesAbacateSubscription = !usesStripeCheckout && isSelectedCreditCard && (
+    (enrollmentGateway === "abacatepay" && enrollmentMethod === "credit_card" &&
+      (paymentStatus?.enrollment_card_reuse ?? orderResponse?.enrollment_card_reuse) === false) ||
+    (!enrollmentMethod && selectedBilling?.type === "recurring" && selectedBilling.cycle === "monthly" &&
+      paymentConfig?.gateway === "abacatepay")
+  );
   useEffect(() => {
-    if (step !== "payment" || !orderResponse?.order_id) return;
+    if (step !== "payment" || !orderResponse?.order_id || automaticPix) return;
     let cancelled = false;
 
     void Promise.all([
@@ -785,7 +902,7 @@ export function CheckoutExperience({
     return () => {
       cancelled = true;
     };
-  }, [authToken, orderResponse?.order_id, step]);
+  }, [authToken, automaticPix, orderResponse?.order_id, step]);
   const activeBillingOptions = useMemo(
     () => offerDetail?.billing_options.filter((option) => option.is_active) ?? [],
     [offerDetail]
@@ -796,6 +913,20 @@ export function CheckoutExperience({
   const monthlyOptions = activeBillingOptions.filter(
     (option) => option.type === "recurring"
   );
+  const enrollmentAvailable = Boolean(
+    upfrontOptions.length && monthlyOptions.length &&
+    (offerDetail?.recurring_start_month || offerDetail?.stripe_recurring_start_month)
+  );
+  const selectedRecurring = monthlyOptions.find((option) => option.code === selectedRecurringCode);
+  const isEnrollment = paymentBillingType === "enrollment" && enrollmentAvailable;
+  const enrollmentStartLabel = offerDetail?.recurring_start_month && offerDetail?.stripe_recurring_start_month
+    && offerDetail.recurring_start_month !== offerDetail.stripe_recurring_start_month
+      ? `${formatRecurringMonth(offerDetail.recurring_start_month)} na AbacatePay ou ${formatRecurringMonth(offerDetail.stripe_recurring_start_month)} na Stripe para pagamentos internacionais`
+      : offerDetail?.recurring_start_month && !offerDetail?.stripe_recurring_start_month
+        ? `${formatRecurringMonth(offerDetail.recurring_start_month)} na AbacatePay para pagadores brasileiros`
+        : offerDetail?.stripe_recurring_start_month && !offerDetail?.recurring_start_month
+          ? `${formatRecurringMonth(offerDetail.stripe_recurring_start_month)} na Stripe para pagamentos internacionais`
+          : formatRecurringMonth(offerDetail?.recurring_start_month ?? offerDetail?.stripe_recurring_start_month);
   const hasMultipleBillingTypes =
     upfrontOptions.length > 0 && monthlyOptions.length > 0;
   const visibleBillingOptions = hasMultipleBillingTypes
@@ -830,6 +961,7 @@ export function CheckoutExperience({
 
   const canContinueToAccount =
     Boolean(selectedBilling) &&
+    (!isEnrollment || Boolean(selectedRecurring)) &&
     (classChoiceMode === "class" ? Boolean(selectedClassId) : Boolean(selectedPeriod));
   const title = useMemo(() => {
     if (step === "language") {
@@ -1072,7 +1204,7 @@ export function CheckoutExperience({
         }
       } catch (error) {
         if (!cancelled) {
-          setLanguagesError(getApiErrorMessage(error));
+          setLanguagesError(getApiErrorMessage(error, "catalog"));
         }
       } finally {
         if (!cancelled) {
@@ -1158,7 +1290,7 @@ export function CheckoutExperience({
         }
       } catch (error) {
         if (!cancelled) {
-          setOffersError(getApiErrorMessage(error));
+          setOffersError(getApiErrorMessage(error, "catalog"));
         }
       } finally {
         if (!cancelled) {
@@ -1204,10 +1336,12 @@ export function CheckoutExperience({
           setSelectedClassId(matchingClass?.id ?? null);
           setPaymentBillingType(defaultBillingType);
           setSelectedBillingCode(defaultBillingOption?.code ?? null);
+          setSelectedRecurringCode(activeOptions.find((option) => option.type === "recurring" && option.billing_method === "credit_card")?.code
+            ?? activeOptions.find((option) => option.type === "recurring")?.code ?? null);
         }
       } catch (error) {
         if (!cancelled) {
-          setOfferDetailError(getApiErrorMessage(error));
+          setOfferDetailError(getApiErrorMessage(error, "catalog"));
         }
       } finally {
         if (!cancelled) {
@@ -1224,11 +1358,15 @@ export function CheckoutExperience({
   }, [offerDetailReloadKey, selectedOfferSummary, step]);
 
   useEffect(() => {
+    const awaitingCardAuthorization = isPaidStatus(paymentStatus)
+      && needsCardAuthorization
+      && (paymentStatus?.enrollment_billing_method ?? orderResponse?.enrollment_billing_method) === "credit_card"
+      && !(paymentStatus?.enrollment_checkout_url ?? orderResponse?.enrollment_checkout_url);
     if (
       step !== "payment" ||
       !orderResponse?.order_id ||
-      isPaidStatus(paymentStatus) ||
-      ((isSelectedCreditCard || usesStripeCheckout) && !cardPaymentSubmitted)
+      (isPaidStatus(paymentStatus) && !awaitingCardAuthorization) ||
+      ((isSelectedCreditCard || usesStripeCheckout) && !cardPaymentSubmitted && !awaitingCardAuthorization && !paymentStatus?.immediate_subscription)
     ) {
       return;
     }
@@ -1251,7 +1389,8 @@ export function CheckoutExperience({
         setPaymentStatus(response.data);
 
         if (
-          !isPaidStatus(response.data) &&
+          (!isPaidStatus(response.data) ||
+            (needsCardAuthorization && !response.data.enrollment_checkout_url)) &&
           !isExpiredStatus(response.data) &&
           !isFailedStatus(response.data)
         ) {
@@ -1277,9 +1416,13 @@ export function CheckoutExperience({
   }, [
     authToken,
     cardPaymentSubmitted,
+    needsCardAuthorization,
     isSelectedCreditCard,
     usesStripeCheckout,
     orderResponse?.order_id,
+    orderResponse?.payment_type,
+    orderResponse?.enrollment_billing_method,
+    orderResponse?.enrollment_checkout_url,
     paymentStatus,
     step,
   ]);
@@ -1294,6 +1437,7 @@ export function CheckoutExperience({
     setSelectedClassId(null);
     setSelectedPeriod(null);
     setSelectedBillingCode(null);
+    setSelectedRecurringCode(null);
     setPaymentBillingType("one_time");
     setClassChoiceMode("class");
     setAuthOrigin("checkout");
@@ -1388,6 +1532,9 @@ export function CheckoutExperience({
     const payload: HotsiteOrderPayload = {
       offer_id: offerDetail.id,
       billing_option_code: selectedBilling.code,
+      ...(isEnrollment && selectedRecurring
+        ? { enrollment_recurring_option_code: selectedRecurring.code }
+        : {}),
       ...(activeCouponPreview?.coupon_code
         ? { coupon_code: activeCouponPreview.coupon_code }
         : {}),
@@ -1497,11 +1644,20 @@ export function CheckoutExperience({
     setPaymentError(null);
 
     try {
-      await checkoutService.startCardPayment(
+      const started = await checkoutService.startCardPayment(
         orderResponse.order_id,
-        payload,
+        {
+          ...payload,
+          ...(enrollmentGateway ? { gateway_choice: enrollmentGateway } : {}),
+          ...(enrollmentMethod ? { accept_recurring: true } : {}),
+          ...(enrollmentMethod ? { installments: 1 } : {}),
+        },
         authToken ?? undefined
       );
+      if (started.data.checkout_url) {
+        window.location.assign(started.data.checkout_url);
+        return;
+      }
       setCardPaymentSubmitted(true);
 
       try {
@@ -1538,8 +1694,9 @@ export function CheckoutExperience({
         orderResponse.order_id,
         {
           accept_contract: true,
+          ...(enrollmentMethod ? { accept_recurring: true } : {}),
           holder_is_customer: true,
-          gateway_choice: "stripe",
+        gateway_choice: "stripe",
         },
         authToken ?? undefined
       );
@@ -1818,10 +1975,19 @@ export function CheckoutExperience({
   };
 
   const summaryTotal = activeCouponPreview?.amount_total ?? selectedBilling?.price ?? offerDetail?.price;
+  const sameValuePix = selectedBilling?.billing_method === "pix" && selectedRecurring?.billing_method === "pix" && Number(summaryTotal) === Number(selectedRecurring.price);
   const pixSavings = getPixSavings(selectedBilling, activeBillingOptions);
-  const summaryInstallments = selectedBilling && isCreditCardOption(selectedBilling) && selectedBilling.type === "one_time"
-    ? Math.max(1, ...selectedBilling.allowed_installments.filter((count) => Number.isInteger(count) && count > 0 && count <= 12))
-    : 1;
+  const recurringCouponInstallments = activeCouponPreview && selectedBilling?.type === "recurring"
+    && Number.isInteger(activeCouponPreview.installments) && activeCouponPreview.installments > 1
+      ? activeCouponPreview.installments
+      : null;
+  const summaryInstallments = recurringCouponInstallments
+    ?? (!isEnrollment && selectedBilling && isCreditCardOption(selectedBilling) && selectedBilling.type === "one_time"
+      ? Math.max(1, ...selectedBilling.allowed_installments.filter((count) => Number.isInteger(count) && count > 0 && count <= 12))
+      : 1);
+  const summaryInstallmentAmount = recurringCouponInstallments && activeCouponPreview?.installment_amount
+    ? activeCouponPreview.installment_amount
+    : Number(summaryTotal) / summaryInstallments;
 
   const renderSelectionSummary = () => (
     <aside className={`${journey.summary} space-y-5 rounded-2xl border border-[#dce4ee] bg-white p-5 shadow-[0_18px_50px_rgba(23,43,77,0.08)] lg:sticky lg:top-6 lg:self-start`}>
@@ -1839,7 +2005,7 @@ export function CheckoutExperience({
         ) : null}
         <p className={`${activeCouponPreview ? "mt-0.5" : "mt-4"} text-3xl font-semibold tracking-[-0.04em] text-foreground`}>
           {summaryInstallments > 1
-            ? `Até ${summaryInstallments}x de ${formatPrice(Number(summaryTotal) / summaryInstallments)}`
+            ? `${recurringCouponInstallments ? "" : "Até "}${summaryInstallments}x de ${formatPrice(summaryInstallmentAmount)}`
             : formatPrice(summaryTotal)}
         </p>
         {summaryInstallments > 1 ? (
@@ -1849,9 +2015,15 @@ export function CheckoutExperience({
         ) : null}
         <p className="mt-1 text-xs leading-5 text-muted-foreground">
           {selectedBilling
-            ? getBillingDescription(selectedBilling)
+            ? isEnrollment ? "Primeira mensalidade paga agora" : getBillingDescription(selectedBilling)
             : "Escolha como prefere pagar"}
         </p>
+        {isEnrollment && selectedRecurring ? (
+          <p className="mt-3 rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm leading-6 text-foreground">
+            Depois, 11 mensalidades de {formatPrice(selectedRecurring.price)} por {getBillingLabel(selectedRecurring).toLowerCase()},
+            a partir de {sameValuePix || selectedBilling?.billing_method === "credit_card" && selectedRecurring.billing_method === "credit_card" && !isForeignOutsideBrazil ? "um mês após o primeiro pagamento no AbacatePay" : enrollmentStartLabel}.
+          </p>
+        ) : null}
         {activeCouponPreview ? (
           <p className="mt-2 text-xs font-semibold text-emerald-700">
             Cupom {activeCouponPreview.coupon_code} aplicado · economia de{" "}
@@ -1883,7 +2055,7 @@ export function CheckoutExperience({
           <p className="text-muted-foreground">Forma de pagamento</p>
           <p className="mt-1 font-semibold text-foreground">
             {selectedBilling
-              ? getBillingLabel(selectedBilling)
+              ? isEnrollment ? `${getBillingLabel(selectedBilling)} agora; ${selectedRecurring ? getBillingLabel(selectedRecurring) : "mensalidade"} depois` : getBillingLabel(selectedBilling)
               : "Selecione uma opção"}
           </p>
         </div>
@@ -1964,19 +2136,40 @@ export function CheckoutExperience({
   );
 
   const handleBillingTypeSelect = (billingType: PaymentBillingType) => {
-    const nextOptions =
-      billingType === "recurring" ? monthlyOptions : upfrontOptions;
+    const nextOptions = billingType === "recurring" ? monthlyOptions : upfrontOptions;
     const nextSelectedOption = getDefaultBillingOption(nextOptions);
 
     setPaymentBillingType(billingType);
     setSelectedBillingCode(nextSelectedOption?.code ?? null);
+    if (billingType === "enrollment" && !selectedRecurringCode) {
+      setSelectedRecurringCode(monthlyOptions[0]?.code ?? null);
+    }
   };
 
-  const renderBillingOptions = (options: HotsiteBillingOption[], titleText: string) =>
+  const renderBillingOptions = (
+    options: HotsiteBillingOption[],
+    titleText: string,
+    titleTooltip?: string
+  ) =>
     options.length > 0 ? (
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold tracking-[-0.02em]">
-          {titleText}
+        <h3 className="flex items-center gap-2 text-lg font-semibold tracking-[-0.02em]">
+          <span>{titleText}</span>
+          {titleTooltip ? (
+            <span
+              className="group relative inline-flex shrink-0"
+              tabIndex={0}
+              aria-label={titleTooltip}
+            >
+              <Info className="size-4 cursor-help text-muted-foreground transition-colors group-hover:text-primary group-focus:text-primary" aria-hidden="true" />
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-72 max-w-[calc(100vw-3rem)] -translate-x-1/2 rounded-lg bg-foreground px-3 py-2 text-left text-xs font-normal leading-5 tracking-normal text-background shadow-lg group-hover:block group-focus:block"
+              >
+                {titleTooltip}
+              </span>
+            </span>
+          ) : null}
         </h3>
         <div className="grid gap-3 sm:grid-cols-2">
           {options.map((option) => {
@@ -2457,7 +2650,7 @@ export function CheckoutExperience({
 
                     <div className="space-y-5">
                       {hasMultipleBillingTypes ? (
-                        <div className="inline-flex rounded-full border border-border bg-muted/40 p-1">
+                        <div className="flex flex-wrap gap-1 rounded-2xl border border-border bg-muted/40 p-1">
                           <button
                             type="button"
                             onClick={() => handleBillingTypeSelect("recurring")}
@@ -2485,10 +2678,38 @@ export function CheckoutExperience({
 
                       {renderBillingOptions(
                         visibleBillingOptions,
-                        visibleBillingType === "recurring"
+                        isEnrollment ? "Como pagar a primeira mensalidade" : visibleBillingType === "recurring"
                           ? "Pagamento mensal"
-                          : "Pagamento único"
+                          : "Pagamento único",
+                        !isEnrollment && visibleBillingType === "recurring"
+                          ? "A primeira mensalidade é cobrada no momento da contratação e, em seguida, é criada a recorrência para as próximas cobranças mensais."
+                          : undefined
                       )}
+                      {isEnrollment ? (
+                        <div className="space-y-3">
+                          <h3 className="text-lg font-semibold">Como pagar as 11 mensalidades seguintes</h3>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            {monthlyOptions.map((option) => (
+                              <button key={option.id} type="button" aria-pressed={selectedRecurringCode === option.code}
+                                onClick={() => setSelectedRecurringCode(option.code)}
+                                className={`rounded-xl border p-4 text-left ${selectedRecurringCode === option.code ? "border-primary bg-accent" : "border-border bg-white"}`}>
+                                <span className="font-semibold">{getBillingLabel(option)}</span>
+                                <span className="mt-1 block text-sm text-muted-foreground">{formatPrice(option.price)} por mês</span>
+                              </button>
+                            ))}
+                          </div>
+                          {selectedBilling && selectedRecurring ? (
+                            <p role="note" className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6">
+                              A primeira mensalidade de {formatPrice(selectedBilling.price)} será paga agora no {getBillingLabel(selectedBilling).toLowerCase()}.
+                              {sameValuePix ? " Você paga a primeira mensalidade e autoriza as próximas 11 com um único QR code no aplicativo do banco." : selectedBilling.billing_method === "pix" && selectedRecurring.billing_method === "pix"
+                                ? " Você receberá o primeiro QR code para pagar agora e, após a confirmação, um segundo QR code para autorizar o Pix Automático das 11 mensalidades. A autorização ficará disponível perto da primeira cobrança recorrente."
+                                : selectedBilling.billing_method === "pix"
+                                  ? " Você receberá um QR code para pagar agora. Após a confirmação, cadastre o cartão em uma segunda etapa para autorizar as 11 mensalidades. Nenhuma mensalidade adicional será cobrada no cadastro do cartão."
+                                  : isForeignOutsideBrazil ? " O mesmo cartão será usado nas 11 mensalidades futuras." : " Informe seu cartão uma vez no AbacatePay. A primeira cobrança é imediata e as demais começam no próximo mês."}
+                            </p>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -3211,9 +3432,31 @@ export function CheckoutExperience({
                     Sua matrícula está confirmada
                   </h2>
                   <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-                    Enviamos os detalhes da matrícula por e-mail. Você já pode
-                    acessar a área do aluno para acompanhar os próximos passos.
+                    {enrollmentMethod
+                      ? needsCardAuthorization && !enrollmentAuthorizationUrl
+                        ? "A primeira mensalidade foi paga. A data das 11 mensalidades no cartão será confirmada no link de autorização."
+                        : `A primeira mensalidade foi paga. As 11 mensalidades seguintes começam em ${formatLocalDate(enrollmentDueDate)}.`
+                      : "Enviamos os detalhes da matrícula por e-mail. Você já pode acessar a área do aluno para acompanhar os próximos passos."}
                   </p>
+                  {automaticPix ? (
+                    <p className="mt-3">Pix Automático autorizado. As próximas mensalidades serão debitadas pelo banco.</p>
+                  ) : enrollmentMethod === "pix" ? (
+                    <div className="mx-auto mt-4 max-w-xl rounded-xl border border-primary/20 bg-white p-4 text-sm leading-6">
+                      O primeiro QR code quitou a mensalidade de agora. O segundo QR code serve para autorizar o Pix Automático das próximas 11 cobranças.
+                      {enrollmentAuthorizationUrl ? (
+                        <a href={enrollmentAuthorizationUrl} className="mt-3 block font-semibold text-primary underline">Abrir segundo QR code e autorizar o Pix Automático</a>
+                      ) : (
+                        <span className="mt-2 block">A autorização ficará disponível perto da primeira cobrança recorrente. Você também receberá o link por e-mail.</span>
+                      )}
+                    </div>
+                  ) : enrollmentMethod === "credit_card" && enrollmentAuthorizationUrl && !paymentStatus?.immediate_subscription ? (
+                    <div className="mx-auto mt-4 max-w-xl rounded-xl border border-primary/20 bg-white p-4 text-sm leading-6">
+                      A entrada foi paga. Cadastre o cartão para autorizar as próximas 11 mensalidades.
+                      <a href={enrollmentAuthorizationUrl} className="mt-3 block font-semibold text-primary underline">Cadastrar cartão das mensalidades</a>
+                    </div>
+                  ) : needsCardAuthorization && !paymentStatus?.immediate_subscription ? (
+                    <p className="mx-auto mt-4 max-w-xl text-sm text-muted-foreground">Estamos preparando o link de autorização. Você também o receberá por e-mail.</p>
+                  ) : null}
                   <div className="mt-5 flex flex-col items-center justify-center gap-3 sm:flex-row">
                     {paymentStatus?.latest_charge?.payment_receipt_url ? (
                       <a
@@ -3273,10 +3516,24 @@ export function CheckoutExperience({
                     Tentar novamente
                   </Button>
                 </div>
-              ) : (isSelectedCreditCard || usesStripeCheckout) &&
+              ) : (automaticPix || isSelectedCreditCard || usesStripeCheckout) &&
                 selectedBilling &&
                 !cardPaymentSubmitted ? (
-                usesStripeCheckout ? (
+                automaticPix || usesAbacateSubscription ? (
+                  <SubscriptionRedirect
+                    key={orderResponse.order_id}
+                    pix={automaticPix}
+                    contractUrl={orderResponse.contract?.contract_file_url}
+                    checkoutUrl={enrollmentAuthorizationUrl}
+                    createCheckout={async () => {
+                      const { data } = await checkoutService.startCardPayment(orderResponse.order_id, {
+                        accept_contract: true, accept_recurring: true, holder_is_customer: true, gateway_choice: "abacatepay",
+                      }, authToken ?? undefined);
+                      if (!data.checkout_url) throw new Error("O link de pagamento ainda não está disponível.");
+                      return data.checkout_url;
+                    }}
+                  />
+                ) : usesStripeCheckout ? (
                   <div className="mx-auto max-w-xl rounded-[1.5rem] border border-border bg-white p-6 text-center shadow-sm sm:p-8">
                     <CreditCard className="mx-auto size-10 text-primary" />
                     <h2 className="mt-4 font-heading text-2xl font-semibold tracking-[-0.03em] text-foreground">
@@ -3285,6 +3542,9 @@ export function CheckoutExperience({
                     <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
                       Como você informou que não reside no Brasil, seu pagamento será processado com segurança pelo Stripe.
                     </p>
+                    {enrollmentMethod ? (
+                      <p className="mt-3 rounded-xl bg-primary/5 p-3 text-sm leading-6">A primeira mensalidade será cobrada agora no cartão. O mesmo cartão autoriza 11 mensalidades de {formatPrice(orderResponse.enrollment_monthly_amount)} a partir de {enrollmentDueDate ? formatLocalDate(enrollmentDueDate) : formatRecurringMonth(enrollmentStartMonth)}.</p>
+                    ) : null}
                     {orderResponse.contract?.contract_file_url ? (
                       <a
                         href={orderResponse.contract.contract_file_url}
@@ -3315,13 +3575,16 @@ export function CheckoutExperience({
                 ) : (
                   <CreditCardPaymentForm
                     key={selectedBilling.code}
-                    billingOption={selectedBilling}
+                    billingOption={enrollmentMethod ? { ...selectedBilling, allowed_installments: [1] } : selectedBilling}
                     contractUrl={orderResponse.contract?.contract_file_url}
                     loading={cardPaymentLoading}
                     error={paymentError}
                     paymentConfig={paymentConfig}
                     customer={paymentCustomer}
                     amount={Number(orderResponse.amount_due ?? selectedBilling.price)}
+                    enrollmentSummary={enrollmentMethod
+                      ? `A entrada de ${formatPrice(orderResponse.amount_due ?? selectedBilling.price)} será paga agora. ${needsCardAuthorization ? "Depois, autorize no checkout de assinatura" : "O mesmo cartão autoriza"} as 11 mensalidades de ${formatPrice(orderResponse.enrollment_monthly_amount)}.`
+                      : undefined}
                     onSubmit={handleStartCardPayment}
                   />
                 )
@@ -3351,6 +3614,13 @@ export function CheckoutExperience({
                     Seu pedido foi criado. Confirme o contrato para visualizar o
                     QR code e concluir o pagamento.
                   </p>
+                  {enrollmentMethod ? (
+                    <p className="mt-4 rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6">
+                      A primeira mensalidade será paga agora com este QR code Pix. {enrollmentMethod === "pix"
+                        ? "Depois da confirmação, um segundo QR code será necessário para autorizar o Pix Automático das 11 mensalidades seguintes."
+                        : "Depois da confirmação, você precisará cadastrar um cartão para autorizar as 11 mensalidades seguintes."}
+                    </p>
+                  ) : null}
                   <div className="mt-6 rounded-xl border border-border bg-muted/20 p-4 text-sm leading-6">
                     Ao continuar, você confirma que leu e aceita o{" "}
                     {orderResponse.contract?.contract_file_url ? (
@@ -3409,6 +3679,9 @@ export function CheckoutExperience({
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">
                         {getPaymentDescription(orderResponse)}
                       </p>
+                      {enrollmentMethod ? (
+                        <p className="mt-3 rounded-lg bg-primary/5 p-3 text-sm leading-6">Este é o primeiro pagamento, feito agora por Pix. {enrollmentMethod === "pix" ? "Após pagar, você receberá outro QR code para autorizar o Pix Automático." : "Após pagar, você receberá um link para cadastrar o cartão das cobranças futuras."}</p>
+                      ) : null}
                     </div>
 
                     <div className="rounded-xl border border-border bg-muted/30 p-4">

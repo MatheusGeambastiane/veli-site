@@ -46,6 +46,7 @@ type CreditCardPaymentFormProps = {
   paymentConfig: PaymentGatewayConfig | null;
   customer: HotsiteAuthenticatedUser | null;
   amount: number;
+  enrollmentSummary?: string;
   onSubmit: (payload: HotsiteStartCardPaymentPayload) => Promise<void>;
 };
 
@@ -160,6 +161,7 @@ export function CreditCardPaymentForm({
   paymentConfig,
   customer,
   amount,
+  enrollmentSummary,
   onSubmit,
 }: CreditCardPaymentFormProps) {
   const [card, setCard] = useState(initialCardForm);
@@ -385,6 +387,11 @@ export function CreditCardPaymentForm({
             Insira os dados do cartão
           </h2>
         </div>
+        {enrollmentSummary ? (
+          <p role="note" className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6 text-foreground">
+            {enrollmentSummary}
+          </p>
+        ) : null}
 
         {!paymentConfig ? (
           <p role="status" className="text-sm text-muted-foreground">Aguardando configuração do pagamento seguro…</p>
@@ -725,7 +732,7 @@ export function CreditCardPaymentForm({
           }
         >
           {loading || submitting ? <Loader2 className="size-4 animate-spin" /> : null}
-          {submitting ? "Processando pagamento…" : "Pagar com cartão"}
+          {submitting ? "Processando pagamento…" : enrollmentSummary ? "Pagar primeira mensalidade e autorizar recorrência" : "Pagar com cartão"}
         </Button>
       </form>
     </div>
