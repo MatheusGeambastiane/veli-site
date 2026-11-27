@@ -276,6 +276,7 @@ export type HotsiteStartCardPaymentPayload = {
 };
 
 export type PaymentGatewayConfig = {
+  checkout_mode?: "hosted" | "embedded";
   gateway: "abacatepay" | "asaas" | "stripe";
   methods: Array<"pix" | "credit_card">;
   capabilities: string[];

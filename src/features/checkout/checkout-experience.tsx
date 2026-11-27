@@ -91,6 +91,7 @@ type CheckoutExperienceProps = {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   resumeOrderId?: number;
+  gatewayReturn?: boolean;
 };
 
 type LoginForm = {
@@ -604,10 +605,10 @@ function isFailedStatus(status: HotsitePaymentStatusResponse | null) {
   );
 }
 
-function SubscriptionRedirect({ pix, contractUrl, checkoutUrl, createCheckout }: {
+function SubscriptionRedirect({ pix, contractUrl, autoRedirect, createCheckout }: {
   pix: boolean;
   contractUrl?: string | null;
-  checkoutUrl?: string;
+  autoRedirect: boolean;
   createCheckout: () => Promise<string>;
 }) {
   const [seconds, setSeconds] = useState(5);
@@ -621,7 +622,7 @@ function SubscriptionRedirect({ pix, contractUrl, checkoutUrl, createCheckout }:
     setOpening(true);
     setError("");
     try {
-      const url = checkoutUrl || await createCheckout();
+      const url = await createCheckout();
       window.location.assign(url);
     } catch (cause) {
       inFlight.current = false;
@@ -633,7 +634,7 @@ function SubscriptionRedirect({ pix, contractUrl, checkoutUrl, createCheckout }:
   const openWhenReady = useEffectEvent(openPayment);
   useEffect(() => {
     // A returning student can reopen an existing checkout while the bank confirms payment.
-    if (checkoutUrl || opening || error) return;
+    if (!autoRedirect || opening || error) return;
     const deadline = Date.now() + 5000;
     const timer = window.setInterval(() => {
       const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
@@ -644,13 +645,13 @@ function SubscriptionRedirect({ pix, contractUrl, checkoutUrl, createCheckout }:
       }
     }, 250);
     return () => window.clearInterval(timer);
-  }, [checkoutUrl, opening, error]);
+  }, [autoRedirect, opening, error]);
 
   return (
     <div className="mx-auto max-w-xl space-y-4 rounded-3xl border bg-white p-6 text-center">
       <p>
-        <span className="text-[1.3em]">Você será redirecionado para o pagamento</span>
-        {!checkoutUrl && !error && !opening && <span className="ml-2 tabular-nums">{seconds}s</span>}
+        <span className="text-[1.3em]">{autoRedirect ? "Você será redirecionado para o pagamento" : "Aguardando confirmação do pagamento"}</span>
+        {autoRedirect && !error && !opening && <span className="ml-2 tabular-nums">{seconds}s</span>}
       </p>
       <Button type="button" className="[zoom:1.2]" disabled={opening} onClick={openPayment}>
         {pix ? <PixIcon /> : <CreditCard aria-hidden="true" className="size-5" />}
@@ -718,6 +719,7 @@ export function CheckoutExperience({
   open = false,
   onOpenChange,
   resumeOrderId,
+  gatewayReturn = false,
 }: CheckoutExperienceProps) {
   const [step, setStep] = useState<CheckoutStep>(
     resumeOrderId ? "payment" : "language"
@@ -875,14 +877,18 @@ export function CheckoutExperience({
   );
   const usesStripeCheckout = isForeignOutsideBrazil && stripeIsAvailable;
   const automaticPix = paymentStatus?.automatic_pix ?? orderResponse?.automatic_pix ?? false;
-  const usesAbacateSubscription = !usesStripeCheckout && isSelectedCreditCard && (
-    (enrollmentGateway === "abacatepay" && enrollmentMethod === "credit_card" &&
-      (paymentStatus?.enrollment_card_reuse ?? orderResponse?.enrollment_card_reuse) === false) ||
-    (!enrollmentMethod && selectedBilling?.type === "recurring" && selectedBilling.cycle === "monthly" &&
-      paymentConfig?.gateway === "abacatepay")
-  );
+  const directMonthly = !enrollmentMethod && (selectedBilling?.type === "recurring" || orderResponse?.payment_mode === "monthly");
+  const monthlyGateway = enrollmentGateway || paymentConfig?.gateway;
+  const waitingForMonthlyGateway = directMonthly && !automaticPix && !paymentConfig &&
+    (!monthlyGateway || (monthlyGateway === "abacatepay" && !isSelectedCreditCard && !paymentStatus?.latest_charge));
+  const usesAbacateSubscription = automaticPix || (monthlyGateway === "abacatepay" && (
+    paymentConfig?.checkout_mode === "hosted" || paymentStatus?.immediate_subscription ||
+    (isSelectedCreditCard && (directMonthly || (enrollmentMethod === "credit_card" &&
+      (paymentStatus?.enrollment_card_reuse ?? orderResponse?.enrollment_card_reuse) === false)))
+  ));
+  const [configRetry, setConfigRetry] = useState(0);
   useEffect(() => {
-    if (step !== "payment" || !orderResponse?.order_id || automaticPix) return;
+    if (step !== "payment" || !orderResponse?.order_id || usesAbacateSubscription) return;
     let cancelled = false;
 
     void Promise.all([
@@ -902,7 +908,7 @@ export function CheckoutExperience({
     return () => {
       cancelled = true;
     };
-  }, [authToken, automaticPix, orderResponse?.order_id, step]);
+  }, [authToken, usesAbacateSubscription, orderResponse?.order_id, step, configRetry]);
   const activeBillingOptions = useMemo(
     () => offerDetail?.billing_options.filter((option) => option.is_active) ?? [],
     [offerDetail]
@@ -3516,15 +3522,20 @@ export function CheckoutExperience({
                     Tentar novamente
                   </Button>
                 </div>
-              ) : (automaticPix || isSelectedCreditCard || usesStripeCheckout) &&
+              ) : waitingForMonthlyGateway && !usesAbacateSubscription ? (
+                paymentError ? <CheckoutError message={paymentError} onRetry={() => {
+                  setPaymentError(null);
+                  setConfigRetry((value) => value + 1);
+                }} /> : <CheckoutLoading />
+              ) : (usesAbacateSubscription || isSelectedCreditCard || usesStripeCheckout) &&
                 selectedBilling &&
                 !cardPaymentSubmitted ? (
-                automaticPix || usesAbacateSubscription ? (
+                usesAbacateSubscription ? (
                   <SubscriptionRedirect
                     key={orderResponse.order_id}
-                    pix={automaticPix}
+                    pix={orderResponse.payment_type === "pix"}
                     contractUrl={orderResponse.contract?.contract_file_url}
-                    checkoutUrl={enrollmentAuthorizationUrl}
+                    autoRedirect={!gatewayReturn}
                     createCheckout={async () => {
                       const { data } = await checkoutService.startCardPayment(orderResponse.order_id, {
                         accept_contract: true, accept_recurring: true, holder_is_customer: true, gateway_choice: "abacatepay",

@@ -253,3 +253,36 @@ for (const { manual, pix } of [{ manual: false, pix: true }, { manual: true, pix
     expect(attempts).toBe(1);
   });
 }
+
+for (const method of ['credit', 'pix']) {
+  test(`Mensalidade no ${method} aguarda o gateway e retoma pelo link validado`, async ({ page }) => {
+    const order = { order_id: 61, offer_name: 'Plano mensal', created_at: '2026-11-27T10:00:00Z',
+      status: 'waiting_payment', checkout_status: 'pending_payment', payment_status: 'pending', payment_type: method, payment_mode: 'monthly', amount_due: '100.00',
+      enrollment_checkout_url: 'https://gateway.example.test/expirado' };
+    let releaseConfig!: () => void;
+    const configReady = new Promise<void>(resolve => { releaseConfig = resolve; });
+    await page.route('**/api/auth/session', route => route.fulfill({ json: { authenticated: true } }));
+    await page.route('**/api/backend/**', async route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/hotsite/orders/')) return route.fulfill({ json: { count: 1, results: [order] } });
+      if (path.endsWith('/orders/61/')) return route.fulfill({ json: order });
+      if (path.endsWith('/payment-status/')) return route.fulfill({ json: { ...order, payment_status: 'pending' } });
+      if (path.endsWith('/payments/config/')) {
+        await configReady;
+        return route.fulfill({ json: { gateway: 'abacatepay', checkout_mode: 'hosted' } });
+      }
+      if (path.endsWith('/start-payment/')) return route.fulfill({ json: { checkout_url: 'https://gateway.example.test/valido' } });
+      return route.fulfill({ json: {} });
+    });
+    await page.route('https://gateway.example.test/valido', route => route.fulfill({ body: 'Pagamento' }));
+    const pending = page.waitForRequest(req => req.url().includes('/payments/config/'));
+    await page.goto('/meus-pedidos');
+    await page.getByRole('link', { name: 'Seguir para o pagamento' }).click();
+    await pending;
+    await expect(page.locator('#card-number')).toHaveCount(0);
+    await expect(page.getByText('Revise antes de gerar o PIX')).toHaveCount(0);
+    releaseConfig();
+    await page.getByRole('button', { name: 'Seguir para pagamento' }).click();
+    await expect(page).toHaveURL('https://gateway.example.test/valido');
+  });
+}

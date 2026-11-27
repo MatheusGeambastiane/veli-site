@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 };
 
 type CheckoutPageProps = {
-  searchParams: Promise<{ order?: string | string[] }>;
+  searchParams: Promise<{ order?: string | string[]; retorno?: string }>;
 };
 
 export default async function CheckoutPage({ searchParams }: CheckoutPageProps) {
@@ -31,7 +31,7 @@ export default async function CheckoutPage({ searchParams }: CheckoutPageProps) 
       <JourneyHeader label="Sua matrícula" secure />
       <main id="conteudo">
         <JourneyBanner />
-        <CheckoutExperience mode="page" resumeOrderId={resumeOrderId} />
+        <CheckoutExperience mode="page" resumeOrderId={resumeOrderId} gatewayReturn={params.retorno === "1"} />
       </main>
       <JourneyFooter />
     </div>
