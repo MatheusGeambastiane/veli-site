@@ -112,6 +112,8 @@ export type HotsiteOffer = {
   cash_discount_type: string | null;
   cash_discount_value: string | null;
   billing_options: HotsiteBillingOption[];
+  recurring_start_month?: string | null;
+  stripe_recurring_start_month?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -138,7 +140,7 @@ export type HotsiteLanguagesResponse = {
 
 export type HotsiteCheckoutOffer = Pick<
   HotsiteOffer,
-  "id" | "name" | "description" | "price" | "access_duration_days" | "student_classes" | "billing_options"
+  "id" | "name" | "description" | "price" | "access_duration_days" | "student_classes" | "billing_options" | "recurring_start_month" | "stripe_recurring_start_month"
 >;
 
 export type HotsiteCheckoutOffersResponse = {
@@ -230,6 +232,7 @@ export type UpdateHotsiteUserPayload = {
 export type HotsiteOrderPayload = {
   offer_id: number;
   billing_option_code: string;
+  enrollment_recurring_option_code?: string;
   installments?: number;
   student_class_id?: number;
   preference_period?: string[];
@@ -243,6 +246,8 @@ export type CouponPreview = {
   discount_amount: string;
   amount_total: string;
   coupon_code: string;
+  installments: number;
+  installment_amount: string;
 };
 
 export type HotsiteCreditCard = {
@@ -254,6 +259,7 @@ export type HotsiteCreditCard = {
 
 export type HotsiteStartCardPaymentPayload = {
   accept_contract: true;
+  accept_recurring?: true;
   gateway_choice?: "abacatepay" | "asaas" | "stripe";
   holder_is_customer: boolean;
   credit_card?: HotsiteCreditCard;
@@ -302,6 +308,14 @@ export type HotsiteOrderContract = {
 
 export type HotsiteOrderResponse = {
   order_id: number;
+  enrollment_gateway?: "abacatepay" | "stripe" | "";
+  automatic_pix?: boolean;
+  enrollment_card_reuse?: boolean;
+  enrollment_billing_method?: "pix" | "credit_card" | "";
+  enrollment_monthly_amount?: string | null;
+  enrollment_start_month?: string | null;
+  enrollment_first_due_date?: string | null;
+  enrollment_checkout_url?: string;
   status: string;
   contract_acceptance_status: string;
   contract?: HotsiteOrderContract;
@@ -334,7 +348,17 @@ export type HotsiteOrderResponse = {
 };
 
 export type HotsitePaymentStatusResponse = {
+  immediate_subscription?: boolean;
   order_id: number;
+  enrollment_gateway?: "abacatepay" | "stripe" | "";
+  automatic_pix?: boolean;
+  enrollment_card_reuse?: boolean;
+  enrollment_billing_method?: "pix" | "credit_card" | "";
+  enrollment_monthly_amount?: string | null;
+  enrollment_start_month?: string | null;
+  enrollment_first_due_date?: string | null;
+  enrollment_checkout_url?: string;
+  enrollment_paid_cycles?: number;
   order_status: string;
   checkout_status: string;
   contract_acceptance_status: string;

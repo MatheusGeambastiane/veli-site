@@ -22,6 +22,16 @@ export type AccountOrders = {
   results: AccountOrder[];
 };
 
+export function isSubscriptionOrder(order: AccountOrder) {
+  const paymentMode = typeof order.payment_mode === "string"
+    ? order.payment_mode.trim().toLowerCase()
+    : "";
+
+  return ["monthly", "recurring", "subscription"].includes(
+    paymentMode
+  );
+}
+
 const pendingPaymentStatuses = new Set([
   "pending",
   "waiting_payment",

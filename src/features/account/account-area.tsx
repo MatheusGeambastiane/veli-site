@@ -3,15 +3,17 @@
 import Link from "next/link";
 import styles from "@/shared/styles/veli-account.module.css";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, Loader2, ReceiptText, RefreshCw, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { checkoutService } from "@/features/checkout/services/checkout-service";
 import { authSessionUpdatedEvent, notifyAuthSessionChanged } from "@/shared/lib/auth-session";
 import { publicEnv } from "@/shared/lib/env";
 import type { HotsiteAuthenticatedUser } from "@/shared/types";
-import { accountError, canContinueOrderPayment, getAccountOrders, isSessionExpired, type AccountOrders } from "./account-service";
+import { accountError, canContinueOrderPayment, getAccountOrders, isSessionExpired, isSubscriptionOrder, type AccountOrders } from "./account-service";
 import { ProfilePanel } from "./profile-panel";
+
+type OrderTab = "subscription" | "full";
 
 const labels: Record<string, string> = {
   paid: "Pago", active: "Ativo", pending: "Aguardando pagamento", waiting_payment: "Aguardando pagamento",
@@ -34,6 +36,7 @@ export function AccountArea({ section }: { section: "orders" | "profile" }) {
   const path = section === "orders" ? "/meus-pedidos" : "/meus-dados";
   const [user, setUser] = useState<HotsiteAuthenticatedUser | null>(null);
   const [orders, setOrders] = useState<AccountOrders | null>(null);
+  const [orderTab, setOrderTab] = useState<OrderTab>("subscription");
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +80,13 @@ export function AccountArea({ section }: { section: "orders" | "profile" }) {
     setLoading(true); setError(null); setPage(nextPage); setReload((value) => value + 1);
   }
 
+  const visibleOrders = useMemo(
+    () => orders?.results.filter((order) =>
+      orderTab === "subscription" ? isSubscriptionOrder(order) : !isSubscriptionOrder(order)
+    ) ?? [],
+    [orderTab, orders]
+  );
+
   return (
     <section className="page-shell py-10 sm:py-16">
       <div className="mx-auto max-w-6xl">
@@ -113,8 +123,52 @@ export function AccountArea({ section }: { section: "orders" | "profile" }) {
                   <h2 className="mt-5 font-heading text-2xl font-semibold">Sua próxima jornada começa aqui</h2>
                   <p className="mt-3 text-sm text-muted-foreground">Você ainda não tem pedidos. Escolha um curso para começar.</p>
                   <Link href="/cursos" className="mt-6 inline-flex rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white">Conhecer os cursos</Link>
-                </div> : <div className="space-y-4">
-                  {orders.results.map((order) => <article key={order.order_id} className={`${styles.panel} rounded-2xl border border-border bg-white p-5 sm:p-6`}>
+                </div> : <>
+                  <div
+                    role="tablist"
+                    aria-label="Tipo de pedido"
+                    className="mb-5 grid grid-cols-2 gap-1 rounded-2xl border border-border bg-muted/50 p-1"
+                  >
+                    {([
+                      { value: "subscription", label: "Assinatura" },
+                      { value: "full", label: "Pago integral" },
+                    ] as const).map((tab) => (
+                      <button
+                        key={tab.value}
+                        id={`orders-tab-${tab.value}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={orderTab === tab.value}
+                        aria-controls={`orders-panel-${tab.value}`}
+                        onClick={() => setOrderTab(tab.value)}
+                        className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                          orderTab === tab.value
+                            ? "bg-white text-primary shadow-sm"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    id={`orders-panel-${orderTab}`}
+                    role="tabpanel"
+                    aria-labelledby={`orders-tab-${orderTab}`}
+                    tabIndex={0}
+                    className="space-y-4 outline-none"
+                  >
+                    {visibleOrders.length === 0 ? (
+                      <div className={`${styles.empty} rounded-2xl border border-dashed border-border p-8 text-center sm:p-12`}>
+                        <ReceiptText className="mx-auto size-8 text-primary" />
+                        <h2 className="mt-4 font-heading text-xl font-semibold">
+                          Nenhum pedido em {orderTab === "subscription" ? "assinatura" : "pagamento integral"}
+                        </h2>
+                        <p className="mt-2 text-sm text-muted-foreground">
+                          Seus pedidos dessa categoria aparecerão aqui.
+                        </p>
+                      </div>
+                    ) : visibleOrders.map((order) => <article key={order.order_id} className={`${styles.panel} rounded-2xl border border-border bg-white p-5 sm:p-6`}>
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0">
                         <p className="text-xs text-muted-foreground">Pedido #{order.order_id} · <time dateTime={order.created_at}>{date.format(new Date(order.created_at))}</time></p>
@@ -124,8 +178,8 @@ export function AccountArea({ section }: { section: "orders" | "profile" }) {
                       <Status value={order.status} />
                     </div>
                     <dl className="mt-6 grid gap-5 border-t border-border pt-5 sm:grid-cols-3">
-                      <div><dt className="text-xs text-muted-foreground">Valor do pedido</dt><dd className="mt-2 font-semibold">{money.format(Number(order.amount_due))}{order.payment_mode === "monthly" ? " / mês" : ""}</dd></div>
-                      <div><dt className="text-xs text-muted-foreground">Forma de pagamento</dt><dd className="mt-2 text-sm">{order.payment_type === "pix" ? "Pix" : order.payment_type === "debit" ? "Débito" : "Cartão de crédito"}{order.payment_mode === "monthly" ? " · Mensal" : (order.payment_installments ?? 1) > 1 ? ` · ${order.payment_installments}x` : " · À vista"}</dd></div>
+                      <div><dt className="text-xs text-muted-foreground">Valor do pedido</dt><dd className="mt-2 font-semibold">{money.format(Number(order.amount_due))}{isSubscriptionOrder(order) ? " / mês" : ""}</dd></div>
+                      <div><dt className="text-xs text-muted-foreground">Forma de pagamento</dt><dd className="mt-2 text-sm">{order.payment_type === "pix" ? "Pix" : order.payment_type === "debit" ? "Débito" : "Cartão de crédito"}{isSubscriptionOrder(order) ? " · Mensal" : (order.payment_installments ?? 1) > 1 ? ` · ${order.payment_installments}x` : " · À vista"}</dd></div>
                       <div><dt className="text-xs text-muted-foreground">Último pagamento</dt><dd className="mt-2"><Status value={order.payment_status} /></dd></div>
                     </dl>
                     {canContinueOrderPayment(order) ? (
@@ -140,7 +194,8 @@ export function AccountArea({ section }: { section: "orders" | "profile" }) {
                       </div>
                     ) : null}
                   </article>)}
-                </div>}
+                  </div>
+                </>}
                 {orders.previous || orders.next ? <nav aria-label="Páginas de pedidos" className="mt-6 flex items-center justify-between gap-3">
                   <Button variant="outline" disabled={!orders.previous} onClick={() => refresh(page - 1)} className="h-10"><ChevronLeft className="size-4" /> Anterior</Button>
                   <span className="text-sm text-muted-foreground">Página {page}</span>
